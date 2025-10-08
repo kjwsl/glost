@@ -50,6 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let content = match ext {
         "epub" => get_content_from_epub(file_path)?,
         "pdf" => get_content_from_pdf(file_path)?,
+        "txt" => std::fs::read_to_string(file_path)?,
         _ => {
             return Err("Unsupported file extension".into());
         }
