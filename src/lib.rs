@@ -40,9 +40,19 @@ impl WordEntry {
             Err(_) => return None,
         };
 
+        let meaning = entry
+            .senses
+            .iter()
+            .filter_map(|s| match &s.glosses {
+                Some(g) => Some(g.join("; ")),
+                None => None,
+            })
+            .collect::<Vec<String>>()
+            .join("; ");
+
         Some(Self {
             word: entry.word,
-            meaning: entry.senses[0].glosses[0].clone(),
+            meaning,
             pos,
             lang,
         })
@@ -124,20 +134,26 @@ pub async fn get_from_kaikki(word: &str) -> Result<Vec<kaikki::Entry>, Box<dyn s
     if word.is_empty() {
         return Err("Word is empty".into());
     }
-    let ch1 = word.chars().next().unwrap();
-    let ch2 = word.chars().nth(1).unwrap_or(ch1);
+    let lower_word = word.to_lowercase();
+    let ch1 = lower_word.chars().next().unwrap();
+    let ch2 = lower_word.chars().nth(1).unwrap_or(ch1);
 
     let part2 = format!("{ch1}{ch2}");
 
     let url = format!(
-        "https://kaikki.org/dictionary/All%20languages%20combined/meaning/{ch1}/{part2}/{word}.jsonl"
+        "https://kaikki.org/dictionary/All%20languages%20combined/meaning/{ch1}/{part2}/{lower_word}.jsonl"
     );
 
-    let resp = reqwest::get(url).await?.text().await?;
+    let resp = reqwest::get(url).await?;
 
+    if !resp.status().is_success() {
+        return Err(format!("Failed to get entry from kaikki.org: {}", resp.status()).into());
+    }
+
+    let text = resp.text().await?;
     let mut entries = vec![];
 
-    for line in resp.lines() {
+    for line in text.lines() {
         if line.is_empty() {
             continue;
         }

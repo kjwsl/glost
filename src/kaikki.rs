@@ -8,7 +8,7 @@ pub struct Entry {
     pub lang_code: String,
     pub pos: String,
     pub senses: Vec<Sense>,
-    pub head_templates: Vec<HeadTemplate>,
+    pub head_templates: Option<Vec<HeadTemplate>>,
     pub categories: Option<Vec<String>>,
     pub sounds: Option<Vec<Sound>>,
 }
@@ -18,7 +18,7 @@ pub struct Entry {
 pub struct Sense {
     pub links: Option<Vec<Vec<String>>>,
     pub form_of: Option<Vec<FormOf>>,
-    pub glosses: Vec<String>,
+    pub glosses: Option<Vec<String>>,
     pub tags: Option<Vec<String>>,
     pub raw_glosses: Option<Vec<String>>,
     pub examples: Option<Vec<Example>>,
@@ -27,7 +27,7 @@ pub struct Sense {
 // Struct for the "examples" array
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Example {
-    pub text: String,
+    pub text: Option<String>,
     pub bold_text_offsets: Option<Vec<Vec<u32>>>,
     pub translation: Option<String>,
     pub english: Option<String>,
