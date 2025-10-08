@@ -5,7 +5,7 @@ use epub::doc::EpubDoc;
 
 pub type Glossary = HashSet<WordEntry>;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct WordEntry {
     pub word: String,
     pub meaning: String,
@@ -59,7 +59,7 @@ impl WordEntry {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Language {
     Afrikaans,
     Chinese,
@@ -77,8 +77,28 @@ pub enum Language {
 }
 
 impl Language {
-    pub fn get_name(&self) -> &str {
+    pub fn to_lang_code(&self) -> &str {
         match self {
+            Language::Afrikaans => "af",
+            Language::Chinese => "zh",
+            Language::Dutch => "nl",
+            Language::English => "en",
+            Language::French => "fr",
+            Language::German => "de",
+            Language::Italian => "it",
+            Language::Japanese => "ja",
+            Language::Korean => "ko",
+            Language::Mandarin => "zh",
+            Language::Portuguese => "pt",
+            Language::Russian => "ru",
+            Language::Spanish => "es",
+        }
+    }
+}
+
+impl std::fmt::Display for Language {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
             Language::Afrikaans => "Afrikaans",
             Language::Chinese => "Chinese",
             Language::Dutch => "Dutch",
@@ -92,7 +112,8 @@ impl Language {
             Language::Portuguese => "Portuguese",
             Language::Russian => "Russian",
             Language::Spanish => "Spanish",
-        }
+        };
+        write!(f, "{}", s)
     }
 }
 
@@ -118,7 +139,7 @@ impl std::str::FromStr for Language {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum POS {
     Noun,
     Verb,
@@ -130,15 +151,36 @@ pub enum POS {
     Other,
 }
 
-pub async fn get_from_kaikki(word: &str) -> Result<Vec<kaikki::Entry>, Box<dyn std::error::Error + Send + Sync>> {
+impl std::fmt::Display for POS {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            POS::Noun => "noun",
+            POS::Verb => "verb",
+            POS::Adjective => "adjective",
+            POS::Adverb => "adverb",
+            POS::Preposition => "preposition",
+            POS::Conjunction => "conjunction",
+            POS::Interjection => "interjection",
+            POS::Other => "other",
+        };
+        write!(f, "{}", s)
+    }
+}
+
+pub async fn get_from_kaikki(
+    word: &str,
+) -> Result<Vec<kaikki::Entry>, Box<dyn std::error::Error + Send + Sync>> {
     if word.is_empty() {
         return Err("Word is empty".into());
     }
     let lower_word = word.to_lowercase();
     let ch1 = lower_word.chars().next().unwrap();
-    let ch2 = lower_word.chars().nth(1).unwrap_or(ch1);
+    let ch2_opt = lower_word.chars().nth(1);
 
-    let part2 = format!("{ch1}{ch2}");
+    let part2 = match ch2_opt {
+        Some(ch2) => format!("{ch1}{ch2}"),
+        None => format!("{ch1}"),
+    };
 
     let url = format!(
         "https://kaikki.org/dictionary/All%20languages%20combined/meaning/{ch1}/{part2}/{lower_word}.jsonl"
