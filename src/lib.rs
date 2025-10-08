@@ -1,0 +1,188 @@
+pub mod kaikki;
+use std::{collections::HashSet, fs, path::Path, str::FromStr};
+
+use epub::doc::EpubDoc;
+
+pub type Glossary = HashSet<WordEntry>;
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct WordEntry {
+    pub word: String,
+    pub meaning: String,
+    pub pos: POS,
+    pub lang: Language,
+}
+
+impl WordEntry {
+    pub fn new(word: String, meaning: String, pos: POS, lang: Language) -> Self {
+        Self {
+            word,
+            meaning,
+            pos,
+            lang,
+        }
+    }
+
+    pub fn from_kaikki_entry(entry: kaikki::Entry) -> Option<Self> {
+        let pos = match entry.pos.as_str() {
+            "noun" => POS::Noun,
+            "verb" => POS::Verb,
+            "adj" => POS::Adjective,
+            "adv" => POS::Adverb,
+            "prep" => POS::Preposition,
+            "conj" => POS::Conjunction,
+            "interj" => POS::Interjection,
+            _ => POS::Other,
+        };
+
+        let lang = match Language::from_str(&entry.lang) {
+            Ok(l) => l,
+            Err(_) => return None,
+        };
+
+        Some(Self {
+            word: entry.word,
+            meaning: entry.senses[0].glosses[0].clone(),
+            pos,
+            lang,
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Language {
+    Afrikaans,
+    Chinese,
+    Dutch,
+    English,
+    French,
+    German,
+    Italian,
+    Japanese,
+    Korean,
+    Mandarin,
+    Portuguese,
+    Russian,
+    Spanish,
+}
+
+impl Language {
+    pub fn get_name(&self) -> &str {
+        match self {
+            Language::Afrikaans => "Afrikaans",
+            Language::Chinese => "Chinese",
+            Language::Dutch => "Dutch",
+            Language::English => "English",
+            Language::French => "French",
+            Language::German => "German",
+            Language::Italian => "Italian",
+            Language::Japanese => "Japanese",
+            Language::Korean => "Korean",
+            Language::Mandarin => "Mandarin",
+            Language::Portuguese => "Portuguese",
+            Language::Russian => "Russian",
+            Language::Spanish => "Spanish",
+        }
+    }
+}
+
+impl std::str::FromStr for Language {
+    type Err = std::fmt::Error;
+    fn from_str(s: &str) -> Result<Self, std::fmt::Error> {
+        match s.to_lowercase().as_str() {
+            "afrikaans" => Ok(Language::Afrikaans),
+            "chinese" => Ok(Language::Chinese),
+            "dutch" => Ok(Language::Dutch),
+            "english" => Ok(Language::English),
+            "french" => Ok(Language::French),
+            "german" => Ok(Language::German),
+            "italian" => Ok(Language::Italian),
+            "japanese" => Ok(Language::Japanese),
+            "korean" => Ok(Language::Korean),
+            "mandarin" => Ok(Language::Mandarin),
+            "portuguese" => Ok(Language::Portuguese),
+            "russian" => Ok(Language::Russian),
+            "spanish" => Ok(Language::Spanish),
+            _ => Err(std::fmt::Error),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum POS {
+    Noun,
+    Verb,
+    Adjective,
+    Adverb,
+    Preposition,
+    Conjunction,
+    Interjection,
+    Other,
+}
+
+pub async fn get_from_kaikki(word: &str) -> Result<Vec<kaikki::Entry>, Box<dyn std::error::Error>> {
+    if word.is_empty() {
+        return Err("Word is empty".into());
+    }
+    let ch1 = word.chars().next().unwrap();
+    let ch2 = word.chars().nth(1).unwrap_or(ch1);
+
+    let part2 = format!("{ch1}{ch2}");
+
+    let url = format!(
+        "https://kaikki.org/dictionary/All%20languages%20combined/meaning/{ch1}/{part2}/{word}.jsonl"
+    );
+
+    let resp = reqwest::get(url).await?.text().await?;
+
+    let mut entries = vec![];
+
+    for line in resp.lines() {
+        if line.is_empty() {
+            continue;
+        }
+        let entry = match serde_json::from_str::<kaikki::Entry>(line) {
+            Ok(e) => e,
+            Err(e) => return Err(format!("Failed to parse entry: {e}").into()),
+        };
+        entries.push(entry);
+    }
+
+    Ok(entries)
+}
+
+pub fn get_content_from_epub(
+    file_path: impl AsRef<Path>,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let mut doc = EpubDoc::new(file_path)?;
+    let mut content = String::new();
+
+    while let Some((chapter_content, _mime_type)) = doc.get_current_str() {
+        content.push_str(&chapter_content);
+        if !doc.go_next() {
+            break;
+        }
+    }
+
+    Ok(content)
+}
+
+pub fn get_content_from_pdf(
+    file_path: impl AsRef<Path>,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let bytes = fs::read(file_path)?;
+    let out = pdf_extract::extract_text_from_mem(bytes.as_slice())?;
+
+    Ok(out)
+}
+
+pub fn get_word_list_from_content(text: &str) -> HashSet<String> {
+    text.split_whitespace()
+        .map(String::from)
+        .filter(|s| is_word(s))
+        .collect()
+}
+
+fn is_word(word: &str) -> bool {
+    word.chars().all(char::is_alphabetic)
+}
