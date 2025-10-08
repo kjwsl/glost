@@ -1,7 +1,10 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use glossary::{get_content_from_epub, get_content_from_pdf, get_from_kaikki, get_word_list_from_content, Glossary, WordEntry};
+use glossary::{
+    Glossary, WordEntry, get_content_from_epub, get_content_from_pdf, get_from_kaikki,
+    get_word_list_from_content,
+};
 
 #[derive(Debug, Clone, Parser)]
 struct Args {
@@ -36,7 +39,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut glossary = Glossary::new();
 
     for word in word_list {
-        let entries = get_from_kaikki(&word).await?;
+        let Some(entries) = get_from_kaikki(&word).await.ok() else {
+            eprintln!("Failed to get entry from kaikki.org: {word}");
+            continue;
+        };
+
         for entry in entries {
             if entry.lang.to_lowercase() == args.lang {
                 if let Some(word_entry) = WordEntry::from_kaikki_entry(entry) {
@@ -45,7 +52,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-
 
     Ok(())
 }
