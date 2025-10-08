@@ -16,7 +16,7 @@ struct Args {
 }
 
 fn generate_markdown(glossary: &Glossary) -> String {
-    let mut glossary_vec = glossary.into_iter().collect::<Vec<_>>();
+    let mut glossary_vec = glossary.iter().collect::<Vec<_>>();
     glossary_vec.sort_by(|a, b| b.frequency.cmp(&a.frequency));
 
     let mut markdown = String::new();
@@ -24,7 +24,7 @@ fn generate_markdown(glossary: &Glossary) -> String {
 
     for entry in glossary_vec {
         markdown.push_str(&format!("### {} ({})\n", entry.word, entry.frequency));
-        markdown.push_str(&format!("- *{}*: {}\n\n", entry.pos.to_string(), entry.meaning));
+        markdown.push_str(&format!("- *{}*: {}\n\n", entry.pos, entry.meaning));
     }
 
     markdown
