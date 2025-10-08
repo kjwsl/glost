@@ -1,5 +1,5 @@
 pub mod kaikki;
-use std::{collections::HashSet, fs, path::Path, str::FromStr};
+use std::{collections::{HashMap, HashSet}, fs, path::Path, str::FromStr};
 
 use epub::doc::EpubDoc;
 
@@ -11,19 +11,21 @@ pub struct WordEntry {
     pub meaning: String,
     pub pos: POS,
     pub lang: Language,
+    pub frequency: usize,
 }
 
 impl WordEntry {
-    pub fn new(word: String, meaning: String, pos: POS, lang: Language) -> Self {
+    pub fn new(word: String, meaning: String, pos: POS, lang: Language, frequency: usize) -> Self {
         Self {
             word,
             meaning,
             pos,
             lang,
+            frequency,
         }
     }
 
-    pub fn from_kaikki_entry(entry: kaikki::Entry) -> Option<Self> {
+    pub fn from_kaikki_entry(entry: kaikki::Entry, frequency: usize) -> Option<Self> {
         let pos = match entry.pos.as_str() {
             "noun" => POS::Noun,
             "verb" => POS::Verb,
@@ -55,6 +57,7 @@ impl WordEntry {
             meaning,
             pos,
             lang,
+            frequency,
         })
     }
 }
@@ -249,11 +252,14 @@ pub fn get_content_from_pdf(
     Ok(out)
 }
 
-pub fn get_word_list_from_content(text: &str) -> HashSet<String> {
-    text.split_whitespace()
-        .map(String::from)
-        .filter(|s| is_word(s))
-        .collect()
+pub fn get_word_list_from_content(text: &str) -> HashMap<String, usize> {
+    let mut word_list = HashMap::new();
+    for word in text.split_whitespace() {
+        if is_word(word) {
+            *word_list.entry(word.to_string()).or_insert(0) += 1;
+        }
+    }
+    word_list
 }
 
 fn is_word(word: &str) -> bool {
