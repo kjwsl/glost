@@ -1,5 +1,10 @@
 pub mod kaikki;
-use std::{collections::{HashMap, HashSet}, fs, path::Path, str::FromStr};
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+    path::Path,
+    str::FromStr,
+};
 
 use epub::doc::EpubDoc;
 
@@ -30,10 +35,14 @@ impl WordEntry {
             "noun" => POS::Noun,
             "verb" => POS::Verb,
             "adj" => POS::Adjective,
+            "article" => POS::Article,
             "adv" => POS::Adverb,
             "prep" => POS::Preposition,
             "conj" => POS::Conjunction,
-            "interj" => POS::Interjection,
+            "det" => POS::Determiner,
+            "pron" => POS::Pronoun,
+            "intj" => POS::Interjection,
+            "particle" => POS::Particle,
             _ => POS::Other,
         };
 
@@ -77,6 +86,7 @@ pub enum Language {
     Portuguese,
     Russian,
     Spanish,
+    Swedish,
 }
 
 impl Language {
@@ -95,6 +105,7 @@ impl Language {
             Language::Portuguese => "pt",
             Language::Russian => "ru",
             Language::Spanish => "es",
+            Language::Swedish => "sv",
         }
     }
 }
@@ -115,6 +126,7 @@ impl std::fmt::Display for Language {
             Language::Portuguese => "Portuguese",
             Language::Russian => "Russian",
             Language::Spanish => "Spanish",
+            Language::Swedish => "Swedish",
         };
         write!(f, "{}", s)
     }
@@ -137,6 +149,7 @@ impl std::str::FromStr for Language {
             "portuguese" => Ok(Language::Portuguese),
             "russian" => Ok(Language::Russian),
             "spanish" => Ok(Language::Spanish),
+            "swedish" => Ok(Language::Swedish),
             _ => Err(std::fmt::Error),
         }
     }
@@ -151,6 +164,10 @@ pub enum POS {
     Preposition,
     Conjunction,
     Interjection,
+    Article,
+    Determiner,
+    Pronoun,
+    Particle,
     Other,
 }
 
@@ -164,6 +181,10 @@ impl std::fmt::Display for POS {
             POS::Preposition => "preposition",
             POS::Conjunction => "conjunction",
             POS::Interjection => "interjection",
+            POS::Article => "article",
+            POS::Determiner => "determiner",
+            POS::Pronoun => "pronoun",
+            POS::Particle => "particle",
             POS::Other => "other",
         };
         write!(f, "{}", s)
