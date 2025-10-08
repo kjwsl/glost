@@ -3,15 +3,44 @@ use std::path::PathBuf;
 
 use clap::Parser;
 use glossary::{
-    get_content_from_epub, get_content_from_pdf, get_from_kaikki, get_word_list_from_content, Glossary,
-    WordEntry,
+    get_content_from_epub, get_content_from_pdf, get_from_kaikki, get_word_list_from_content, Glossary, Language, WordEntry
 };
 
 #[derive(Debug, Clone, Parser)]
 struct Args {
     file_path: String,
-    #[clap(short, long, default_value = "en")]
-    lang: String,
+    #[clap(short, long, default_value_t = Language::English)]
+    lang: Language,
+    #[clap(short, long, default_value = "glossary.md")]
+    output: String,
+}
+
+fn generate_markdown(glossary: &Glossary) -> String {
+    let mut glossary_vec = glossary.into_iter().collect::<Vec<_>>();
+    glossary_vec.sort();
+
+    let mut grouped_glossary = std::collections::BTreeMap::new();
+    for entry in glossary_vec {
+        let first_char = entry.word.chars().next().unwrap().to_ascii_uppercase();
+        grouped_glossary.entry(first_char).or_insert(vec![]).push(entry.clone());
+    }
+
+    let mut markdown = String::new();
+    markdown.push_str("# Glossary\n\n");
+
+    for (char, entries) in grouped_glossary {
+        markdown.push_str(&format!("## {}\n\n", char));
+        for entry in entries {
+            markdown.push_str(&format!("### {}\n", entry.word));
+            markdown.push_str(&format!("- *{}*: {}\n\n", entry.pos.to_string(), entry.meaning));
+        }
+    }
+
+    markdown
+}
+
+fn write_glossary_to_file(markdown: &str, file_path: &str) -> Result<(), std::io::Error> {
+    std::fs::write(file_path, markdown)
 }
 
 #[tokio::main]
@@ -51,7 +80,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match result {
             Ok((_word, Ok(entries))) => {
                 for entry in entries {
-                    if entry.lang.to_lowercase() == args.lang {
+                    if entry.lang_code.to_lowercase() == args.lang.to_lang_code() {
                         if let Some(word_entry) = WordEntry::from_kaikki_entry(entry) {
                             glossary.insert(word_entry);
                         }
@@ -62,6 +91,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Err(e) => eprintln!("Task failed: {}", e),
         }
     }
+
+    let markdown = generate_markdown(&glossary);
+    write_glossary_to_file(&markdown, &args.output)?;
 
     Ok(())
 }
