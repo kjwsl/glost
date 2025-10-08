@@ -17,23 +17,14 @@ struct Args {
 
 fn generate_markdown(glossary: &Glossary) -> String {
     let mut glossary_vec = glossary.into_iter().collect::<Vec<_>>();
-    glossary_vec.sort();
-
-    let mut grouped_glossary = std::collections::BTreeMap::new();
-    for entry in glossary_vec {
-        let first_char = entry.word.chars().next().unwrap().to_ascii_uppercase();
-        grouped_glossary.entry(first_char).or_insert(vec![]).push(entry.clone());
-    }
+    glossary_vec.sort_by(|a, b| b.frequency.cmp(&a.frequency));
 
     let mut markdown = String::new();
     markdown.push_str("# Glossary\n\n");
 
-    for (char, entries) in grouped_glossary {
-        markdown.push_str(&format!("## {}\n\n", char));
-        for entry in entries {
-            markdown.push_str(&format!("### {}\n", entry.word));
-            markdown.push_str(&format!("- *{}*: {}\n\n", entry.pos.to_string(), entry.meaning));
-        }
+    for entry in glossary_vec {
+        markdown.push_str(&format!("### {} ({})\n", entry.word, entry.frequency));
+        markdown.push_str(&format!("- *{}*: {}\n\n", entry.pos.to_string(), entry.meaning));
     }
 
     markdown
@@ -70,24 +61,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut futures = FuturesUnordered::new();
 
-    for word in word_list {
+    for (word, frequency) in word_list {
         futures.push(tokio::spawn(async move {
-            (word.clone(), get_from_kaikki(&word).await)
+            (word.clone(), frequency, get_from_kaikki(&word).await)
         }));
     }
 
     while let Some(result) = futures.next().await {
         match result {
-            Ok((_word, Ok(entries))) => {
+            Ok((_word, frequency, Ok(entries))) => {
                 for entry in entries {
                     if entry.lang_code.to_lowercase() == args.lang.to_lang_code() {
-                        if let Some(word_entry) = WordEntry::from_kaikki_entry(entry) {
+                        if let Some(word_entry) = WordEntry::from_kaikki_entry(entry, frequency) {
                             glossary.insert(word_entry);
                         }
                     }
                 }
             }
-            Ok((word, Err(e))) => eprintln!("Failed to get entry for \"{}\": {}", word, e),
+            Ok((word, _, Err(e))) => eprintln!("Failed to get entry for \"{}\": {}", word, e),
             Err(e) => eprintln!("Task failed: {}", e),
         }
     }
