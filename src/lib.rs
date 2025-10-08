@@ -130,7 +130,7 @@ pub enum POS {
     Other,
 }
 
-pub async fn get_from_kaikki(word: &str) -> Result<Vec<kaikki::Entry>, Box<dyn std::error::Error>> {
+pub async fn get_from_kaikki(word: &str) -> Result<Vec<kaikki::Entry>, Box<dyn std::error::Error + Send + Sync>> {
     if word.is_empty() {
         return Err("Word is empty".into());
     }
@@ -144,7 +144,22 @@ pub async fn get_from_kaikki(word: &str) -> Result<Vec<kaikki::Entry>, Box<dyn s
         "https://kaikki.org/dictionary/All%20languages%20combined/meaning/{ch1}/{part2}/{lower_word}.jsonl"
     );
 
-    let resp = reqwest::get(url).await?;
+    let mut retries = 3;
+    let mut delay = std::time::Duration::from_millis(100);
+
+    let resp = loop {
+        match reqwest::get(&url).await {
+            Ok(resp) => break resp,
+            Err(e) => {
+                if retries == 0 {
+                    return Err(e.into());
+                }
+                retries -= 1;
+                tokio::time::sleep(delay).await;
+                delay *= 2;
+            }
+        }
+    };
 
     if !resp.status().is_success() {
         return Err(format!("Failed to get entry from kaikki.org: {}", resp.status()).into());

@@ -1,9 +1,10 @@
+use futures::{stream::FuturesUnordered, StreamExt};
 use std::path::PathBuf;
 
 use clap::Parser;
 use glossary::{
-    Glossary, WordEntry, get_content_from_epub, get_content_from_pdf, get_from_kaikki,
-    get_word_list_from_content,
+    get_content_from_epub, get_content_from_pdf, get_from_kaikki, get_word_list_from_content, Glossary,
+    WordEntry,
 };
 
 #[derive(Debug, Clone, Parser)]
@@ -38,18 +39,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut glossary = Glossary::new();
 
-    for word in word_list {
-        let Some(entries) = get_from_kaikki(&word).await.ok() else {
-            eprintln!("Failed to get entry from kaikki.org: {word}");
-            continue;
-        };
+    let mut futures = FuturesUnordered::new();
 
-        for entry in entries {
-            if entry.lang.to_lowercase() == args.lang {
-                if let Some(word_entry) = WordEntry::from_kaikki_entry(entry) {
-                    glossary.insert(word_entry);
+    for word in word_list {
+        futures.push(tokio::spawn(async move {
+            (word.clone(), get_from_kaikki(&word).await)
+        }));
+    }
+
+    while let Some(result) = futures.next().await {
+        match result {
+            Ok((_word, Ok(entries))) => {
+                for entry in entries {
+                    if entry.lang.to_lowercase() == args.lang {
+                        if let Some(word_entry) = WordEntry::from_kaikki_entry(entry) {
+                            glossary.insert(word_entry);
+                        }
+                    }
                 }
             }
+            Ok((word, Err(e))) => eprintln!("Failed to get entry for \"{}\": {}", word, e),
+            Err(e) => eprintln!("Task failed: {}", e),
         }
     }
 
