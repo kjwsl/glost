@@ -1,18 +1,69 @@
 use futures::{stream::FuturesUnordered, StreamExt};
 use std::path::PathBuf;
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use glossary::{
-    get_content_from_epub, get_content_from_pdf, get_from_kaikki, get_word_list_from_content, Glossary, Language, WordEntry
+    get_content_from_epub, get_content_from_pdf, get_from_kaikki, get_word_list_from_content, 
+    Glossary, Language, WordEntry, FilterList
 };
 
 #[derive(Debug, Clone, Parser)]
 struct Args {
-    file_path: String,
-    #[clap(short, long, default_value_t = Language::English)]
-    lang: Language,
-    #[clap(short, long, default_value = "glossary.md")]
-    output: String,
+    #[clap(subcommand)]
+    command: Command,
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum Command {
+    /// Generate a glossary from a file
+    Generate {
+        file_path: String,
+        #[clap(short, long, default_value_t = Language::English)]
+        lang: Language,
+        #[clap(short, long, default_value = "glossary.md")]
+        output: String,
+        #[clap(short, long, default_value = "filter.txt")]
+        filter: String,
+    },
+    /// Manage filter list of known words
+    Filter {
+        #[clap(subcommand)]
+        action: FilterAction,
+    },
+}
+
+#[derive(Debug, Clone, Subcommand)]
+enum FilterAction {
+    /// Add words to the filter list
+    Add {
+        words: Vec<String>,
+        #[clap(short, long, default_value = "filter.txt")]
+        file: String,
+        #[clap(short, long, default_value_t = Language::English)]
+        lang: Language,
+    },
+    /// Remove words from the filter list
+    Remove {
+        words: Vec<String>,
+        #[clap(short, long, default_value = "filter.txt")]
+        file: String,
+        #[clap(short, long, default_value_t = Language::English)]
+        lang: Language,
+    },
+    /// List all words in the filter list
+    List {
+        #[clap(short, long, default_value = "filter.txt")]
+        file: String,
+        #[clap(short, long)]
+        lang: Option<Language>,
+    },
+    /// Clear words from the filter list
+    Clear {
+        #[clap(short, long, default_value = "filter.txt")]
+        file: String,
+        #[clap(short, long)]
+        lang: Option<Language>,
+    },
 }
 
 fn generate_markdown(glossary: &Glossary) -> String {
@@ -38,7 +89,23 @@ fn write_glossary_to_file(markdown: &str, file_path: &str) -> Result<(), std::io
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
 
-    let file_path = PathBuf::from(args.file_path);
+    match args.command {
+        Command::Generate { file_path, lang, output, filter } => {
+            generate_glossary(file_path, lang, output, filter).await
+        }
+        Command::Filter { action } => {
+            handle_filter_action(action).await
+        }
+    }
+}
+
+async fn generate_glossary(
+    file_path: String,
+    lang: Language,
+    output: String,
+    filter_file: String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let file_path = PathBuf::from(file_path);
     if !file_path.exists() {
         return Err("File does not exist".into());
     }
@@ -58,11 +125,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let word_list = get_word_list_from_content(&content);
 
-    let mut glossary = Glossary::new();
+    // Load filter list and exclude filtered words
+    let filter_list = FilterList::load(&filter_file)?;
+    let filtered_word_list: Vec<(String, usize)> = word_list
+        .into_iter()
+        .filter(|(word, _)| !filter_list.contains(word, lang))
+        .collect();
 
+    let mut glossary = Glossary::new();
     let mut futures = FuturesUnordered::new();
 
-    for (word, frequency) in word_list {
+    for (word, frequency) in filtered_word_list {
         futures.push(tokio::spawn(async move {
             (word.clone(), frequency, get_from_kaikki(&word).await)
         }));
@@ -72,7 +145,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         match result {
             Ok((_word, frequency, Ok(entries))) => {
                 for entry in entries {
-                    if entry.lang_code.to_lowercase() == args.lang.to_lang_code() {
+                    if entry.lang_code.to_lowercase() == lang.to_lang_code() {
                         if let Some(word_entry) = WordEntry::from_kaikki_entry(entry, frequency) {
                             glossary.insert(word_entry);
                         }
@@ -85,7 +158,72 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let markdown = generate_markdown(&glossary);
-    write_glossary_to_file(&markdown, &args.output)?;
+    write_glossary_to_file(&markdown, &output)?;
 
+    Ok(())
+}
+
+async fn handle_filter_action(action: FilterAction) -> Result<(), Box<dyn std::error::Error>> {
+    match action {
+        FilterAction::Add { words, file, lang } => {
+            let mut filter_list = FilterList::load(&file)?;
+            for word in words {
+                filter_list.add(word.clone(), lang);
+                println!("Added '{}' to {} filter list", word, lang);
+            }
+            filter_list.save(&file)?;
+        }
+        FilterAction::Remove { words, file, lang } => {
+            let mut filter_list = FilterList::load(&file)?;
+            for word in words {
+                if filter_list.remove(&word, lang) {
+                    println!("Removed '{}' from {} filter list", word, lang);
+                } else {
+                    println!("Word '{}' was not in {} filter list", word, lang);
+                }
+            }
+            filter_list.save(&file)?;
+        }
+        FilterAction::List { file, lang } => {
+            let filter_list = FilterList::load(&file)?;
+            let words = filter_list.list(lang);
+            if words.is_empty() {
+                match lang {
+                    Some(l) => println!("Filter list for {} is empty", l),
+                    None => println!("Filter list is empty"),
+                }
+            } else {
+                match lang {
+                    Some(l) => println!("Filter list for {} contains {} words:", l, words.len()),
+                    None => println!("Filter list contains {} words:", words.len()),
+                }
+                let mut current_lang: Option<Language> = None;
+                for (word_lang, word) in words {
+                    if current_lang != Some(word_lang) {
+                        if lang.is_none() {
+                            println!("\n{}:", word_lang);
+                        }
+                        current_lang = Some(word_lang);
+                    }
+                    println!("  {}", word);
+                }
+            }
+        }
+        FilterAction::Clear { file, lang } => {
+            match lang {
+                Some(l) => {
+                    let mut filter_list = FilterList::load(&file)?;
+                    filter_list.clear_language(l);
+                    filter_list.save(&file)?;
+                    println!("Cleared {} filter list", l);
+                }
+                None => {
+                    let filter_list = FilterList::new();
+                    filter_list.save(&file)?;
+                    println!("Cleared all filter lists");
+                }
+            }
+        }
+    }
     Ok(())
 }
