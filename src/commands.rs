@@ -7,6 +7,7 @@ use crate::{
     filter::FilterList,
     glossary::{generate_markdown, write_glossary_to_file, Glossary, WordEntry},
     kaikki::get_from_kaikki,
+    youtube::get_youtube_transcript,
     Language,
 };
 
@@ -14,6 +15,9 @@ pub async fn handle_command(command: Command) -> Result<(), Box<dyn std::error::
     match command {
         Command::Generate { file_path, lang, output, filter } => {
             handle_generate(file_path, lang, output, filter).await
+        }
+        Command::Youtube { video_url, lang, output, filter } => {
+            handle_youtube(video_url, lang, output, filter).await
         }
         Command::Filter { action } => {
             handle_filter_action(action).await
@@ -33,6 +37,57 @@ async fn handle_generate(
     }
 
     let content = get_content_from_file(file_path)?;
+    let word_list = get_word_list_from_content(&content);
+
+    // Load filter list and exclude filtered words
+    let filter_list = FilterList::load(&filter_file)?;
+    let filtered_word_list: Vec<(String, usize)> = word_list
+        .into_iter()
+        .filter(|(word, _)| !filter_list.contains(word, lang))
+        .collect();
+
+    let mut glossary = Glossary::new();
+    let mut futures = FuturesUnordered::new();
+
+    for (word, frequency) in filtered_word_list {
+        futures.push(tokio::spawn(async move {
+            (word.clone(), frequency, get_from_kaikki(&word).await)
+        }));
+    }
+
+    while let Some(result) = futures.next().await {
+        match result {
+            Ok((_word, frequency, Ok(entries))) => {
+                for entry in entries {
+                    if entry.lang_code.to_lowercase() == lang.to_lang_code() {
+                        if let Some(word_entry) = WordEntry::from_kaikki_entry(entry, frequency) {
+                            glossary.insert(word_entry);
+                        }
+                    }
+                }
+            }
+            Ok((word, _, Err(e))) => eprintln!("Failed to get entry for \"{}\": {}", word, e),
+            Err(e) => eprintln!("Task failed: {}", e),
+        }
+    }
+
+    let markdown = generate_markdown(&glossary);
+    write_glossary_to_file(&markdown, &output)?;
+
+    println!("Generated glossary with {} entries in {}", glossary.len(), output);
+    Ok(())
+}
+
+async fn handle_youtube(
+    video_url: String,
+    lang: Language,
+    output: String,
+    filter_file: String,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!("Fetching transcript from YouTube video...");
+    let content = get_youtube_transcript(&video_url).await?;
+    println!("Transcript fetched successfully!");
+    
     let word_list = get_word_list_from_content(&content);
 
     // Load filter list and exclude filtered words
