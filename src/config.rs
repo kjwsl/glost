@@ -22,20 +22,3 @@ pub fn get_config_dir() -> PathBuf {
     
     config_dir
 }
-
-/// Migrate the filter file from the current directory to the config directory
-pub fn migrate_filter_file_if_needed() -> Result<(), std::io::Error> {
-    let old_path = PathBuf::from("filter.txt");
-    let new_path = get_config_dir().join("filter.txt");
-    
-    // If the old file exists and the new one doesn't, migrate it
-    if old_path.exists() && !new_path.exists() {
-        std::fs::copy(&old_path, &new_path)?;
-        println!("Migrated filter.txt to config directory: {}", new_path.display());
-        
-        // Optionally remove the old file (commented out for safety)
-        // std::fs::remove_file(&old_path)?;
-    }
-    
-    Ok(())
-}
