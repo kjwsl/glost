@@ -1,0 +1,182 @@
+use std::error::Error;
+use std::process::Command;
+use url::Url;
+
+pub async fn get_youtube_transcript(video_url: &str) -> Result<String, Box<dyn Error>> {
+    let video_id = extract_video_id(video_url)?;
+    
+    // Check if yt-dlp is available
+    if !is_yt_dlp_available() {
+        return Err("yt-dlp is not installed. Please install it with: pip install yt-dlp".into());
+    }
+    
+    fetch_transcript_with_yt_dlp(&video_id).await
+}
+
+fn extract_video_id(url: &str) -> Result<String, Box<dyn Error>> {
+    let parsed_url = Url::parse(url)?;
+    
+    match parsed_url.host_str() {
+        Some("www.youtube.com") | Some("youtube.com") | Some("m.youtube.com") => {
+            if let Some(query) = parsed_url.query() {
+                for (key, value) in url::form_urlencoded::parse(query.as_bytes()) {
+                    if key == "v" {
+                        return Ok(value.to_string());
+                    }
+                }
+            }
+            Err("Could not find video ID in YouTube URL".into())
+        }
+        Some("youtu.be") => {
+            let path = parsed_url.path();
+            if path.starts_with('/') && path.len() > 1 {
+                // Handle query parameters in youtu.be URLs
+                let video_id = &path[1..];
+                if let Some(question_mark) = video_id.find('?') {
+                    Ok(video_id[..question_mark].to_string())
+                } else {
+                    Ok(video_id.to_string())
+                }
+            } else {
+                Err("Invalid youtu.be URL format".into())
+            }
+        }
+        _ => Err("Not a valid YouTube URL".into()),
+    }
+}
+
+fn is_yt_dlp_available() -> bool {
+    Command::new("yt-dlp")
+        .arg("--version")
+        .output()
+        .is_ok()
+}
+
+async fn fetch_transcript_with_yt_dlp(video_id: &str) -> Result<String, Box<dyn Error>> {
+    let video_url = format!("https://www.youtube.com/watch?v={}", video_id);
+    
+    // Try to download auto-generated English subtitles
+    let output = Command::new("yt-dlp")
+        .arg(&video_url)
+        .arg("--write-auto-subs")
+        .arg("--sub-langs")
+        .arg("en")
+        .arg("--sub-format")
+        .arg("vtt")
+        .arg("--skip-download")
+        .arg("-o")
+        .arg(format!("{}.%(ext)s", video_id))
+        .output()?;
+    
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("yt-dlp failed: {}", stderr).into());
+    }
+    
+    // Look for the downloaded .vtt file
+    let vtt_filename = format!("{}.en.vtt", video_id);
+    
+    if std::path::Path::new(&vtt_filename).exists() {
+        let content = std::fs::read_to_string(&vtt_filename)?;
+        let transcript = extract_text_from_vtt(&content)?;
+        // Clean up the file
+        let _ = std::fs::remove_file(&vtt_filename);
+        return Ok(transcript);
+    }
+    
+    Err("No transcript file was downloaded. The video may not have auto-generated captions.".into())
+}
+
+fn extract_text_from_vtt(vtt_content: &str) -> Result<String, Box<dyn Error>> {
+    let mut transcript = String::new();
+    let lines: Vec<&str> = vtt_content.lines().collect();
+    
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i].trim();
+        
+        // Skip VTT headers and timing lines
+        if line.starts_with("WEBVTT") || 
+           line.starts_with("NOTE") || 
+           line.contains("-->") || 
+           line.is_empty() {
+            i += 1;
+            continue;
+        }
+        
+        // Skip lines that look like timestamps
+        if line.chars().next().map_or(false, |c| c.is_ascii_digit()) &&
+           (line.contains(':') || line.contains('.')) {
+            i += 1;
+            continue;
+        }
+        
+        // This should be subtitle text
+        if !line.is_empty() {
+            let cleaned_text = clean_subtitle_text(line);
+            if !cleaned_text.is_empty() {
+                transcript.push_str(&cleaned_text);
+                transcript.push(' ');
+            }
+        }
+        
+        i += 1;
+    }
+    
+    if transcript.trim().is_empty() {
+        Err("No text content found in the subtitle file".into())
+    } else {
+        Ok(transcript.trim().to_string())
+    }
+}
+
+fn clean_subtitle_text(text: &str) -> String {
+    // Remove HTML tags and clean up subtitle text
+    let text = text
+        .replace("<c>", "")
+        .replace("</c>", "")
+        .replace("<i>", "")
+        .replace("</i>", "")
+        .replace("<b>", "")
+        .replace("</b>", "")
+        .replace("<u>", "")
+        .replace("</u>", "")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'");
+    
+    // Remove timestamp markers and other VTT formatting
+    let text = text
+        .replace("<v ", "")
+        .replace(">", " ");
+    
+    text.trim().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_video_id() {
+        let test_cases = vec![
+            ("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "dQw4w9WgXcQ"),
+            ("https://youtu.be/dQw4w9WgXcQ", "dQw4w9WgXcQ"),
+            ("https://youtu.be/dQw4w9WgXcQ?si=abc123", "dQw4w9WgXcQ"),
+            ("https://youtube.com/watch?v=dQw4w9WgXcQ&t=60s", "dQw4w9WgXcQ"),
+        ];
+        
+        for (url, expected_id) in test_cases {
+            assert_eq!(extract_video_id(url).unwrap(), expected_id);
+        }
+    }
+
+    #[test]
+    fn test_clean_subtitle_text() {
+        let input = "<c>Hello &amp; welcome to <i>YouTube</i> &#39;transcripts&#39;</c>";
+        let expected = "Hello & welcome to YouTube 'transcripts'";
+        assert_eq!(clean_subtitle_text(input), expected);
+    }
+}

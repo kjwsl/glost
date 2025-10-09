@@ -19,6 +19,16 @@ pub enum Command {
         #[clap(short, long, default_value_t = default_filter_file_path())]
         filter: String,
     },
+    /// Generate a glossary from a YouTube video transcript
+    Youtube {
+        video_url: String,
+        #[clap(short, long, default_value_t = Language::English)]
+        lang: Language,
+        #[clap(short, long, default_value = "glossary.md")]
+        output: String,
+        #[clap(short, long, default_value_t = default_filter_file_path())]
+        filter: String,
+    },
     /// Manage filter list of known words
     Filter {
         #[clap(subcommand)]
