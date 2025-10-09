@@ -1,7 +1,6 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Language {
     Afrikaans,
-    Chinese,
     Dutch,
     English,
     French,
@@ -20,7 +19,6 @@ impl Language {
     pub fn to_lang_code(&self) -> &str {
         match self {
             Language::Afrikaans => "af",
-            Language::Chinese => "zh",
             Language::Dutch => "nl",
             Language::English => "en",
             Language::French => "fr",
@@ -41,7 +39,6 @@ impl std::fmt::Display for Language {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
             Language::Afrikaans => "Afrikaans",
-            Language::Chinese => "Chinese",
             Language::Dutch => "Dutch",
             Language::English => "English",
             Language::French => "French",
@@ -64,7 +61,6 @@ impl std::str::FromStr for Language {
     fn from_str(s: &str) -> Result<Self, std::fmt::Error> {
         match s.to_lowercase().as_str() {
             "afrikaans" => Ok(Language::Afrikaans),
-            "chinese" => Ok(Language::Chinese),
             "dutch" => Ok(Language::Dutch),
             "english" => Ok(Language::English),
             "french" => Ok(Language::French),
@@ -81,3 +77,4 @@ impl std::str::FromStr for Language {
         }
     }
 }
+

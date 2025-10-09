@@ -78,9 +78,19 @@ Swedish:det
 
 ## Supported Languages
 
-- Afrikaans, Chinese, Dutch, English, French, German
-- Italian, Japanese, Korean, Mandarin, Portuguese
-- Russian, Spanish, Swedish
+- Afrikaans
+- Dutch
+- English
+- French
+- German
+- Italian
+- Japanese
+- Korean
+- Mandarin
+- Portuguese
+- Russian
+- Spanish
+- Swedish
 
 ## Code Structure
 
