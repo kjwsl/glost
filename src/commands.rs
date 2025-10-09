@@ -85,7 +85,7 @@ async fn handle_youtube(
     filter_file: String,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("Fetching transcript from YouTube video...");
-    let content = get_youtube_transcript(&video_url).await?;
+    let content = get_youtube_transcript(&video_url, lang).await?;
     println!("Transcript fetched successfully!");
     
     let word_list = get_word_list_from_content(&content);

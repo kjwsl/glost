@@ -1,6 +1,8 @@
 use std::{collections::HashMap, fs, path::Path};
 use epub::doc::EpubDoc;
 
+use crate::youtube::extract_text_from_vtt;
+
 pub fn get_content_from_file(
     file_path: impl AsRef<Path>,
 ) -> Result<String, Box<dyn std::error::Error>> {
@@ -15,7 +17,8 @@ pub fn get_content_from_file(
         "epub" => get_content_from_epub(file_path),
         "pdf" => get_content_from_pdf(file_path),
         "txt" => Ok(fs::read_to_string(file_path)?),
-        _ => Err("Unsupported file extension".into()),
+        "vtt" => extract_text_from_vtt(&fs::read_to_string(file_path)?),
+        _ => Err(format!("Unsupported file extension: {}", ext).into()),
     }
 }
 
