@@ -1,5 +1,5 @@
 use clap::Parser;
-use glossary::{cli::Args, commands::handle_command};
+use glost::{cli::Args, commands::handle_command};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {

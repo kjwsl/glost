@@ -1,4 +1,4 @@
-# Glossary Generator
+# Glost - Glossary Generator
 
 A command-line tool for generating glossaries from ebooks and documents, with language-specific filtering capabilities.
 
@@ -21,13 +21,13 @@ cargo build --release
 
 ```bash
 # Basic usage
-glossary generate book.epub
+glost generate book.epub
 
 # Specify language and output file
-glossary generate --lang Swedish --output swedish_glossary.md book.epub
+glost generate --lang Swedish --output swedish_glossary.md book.epub
 
 # Use custom filter file
-glossary generate --filter my_filters.txt book.epub
+glost generate --filter my_filters.txt book.epub
 ```
 
 ### Manage Filter Lists
@@ -36,25 +36,25 @@ Filter lists allow you to exclude words you already know from the generated glos
 
 ```bash
 # Add words to filter (defaults to English)
-glossary filter add the and it is was were
+glost filter add the and it is was were
 
 # Add words for specific language
-glossary filter add --lang Swedish och att det är
+glost filter add --lang Swedish och att det är
 
 # List all filtered words
-glossary filter list
+glost filter list
 
 # List words for specific language
-glossary filter list --lang Swedish
+glost filter list --lang Swedish
 
 # Remove words from filter
-glossary filter remove --lang English the and
+glost filter remove --lang English the and
 
 # Clear words for specific language
-glossary filter clear --lang Swedish
+glost filter clear --lang Swedish
 
 # Clear all filter lists
-glossary filter clear
+glost filter clear
 ```
 
 ## Filter File Format
