@@ -30,6 +30,12 @@ glost generate --lang Swedish --output swedish_glossary.md book.epub
 glost generate --filter my_filters.txt book.epub
 ```
 
+### Generate a Glossary from a YouTube Video
+```bash
+export YOUTUBE_API_KEY=<your_api_key>
+glost youtube <video_uri>
+```
+
 ### Manage Filter Lists
 
 Filter lists allow you to exclude words you already know from the generated glossary.

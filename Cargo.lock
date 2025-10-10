@@ -615,6 +615,7 @@ dependencies = [
  "serde_json",
  "tokio",
  "url",
+ "yt_transcript_fetcher",
 ]
 
 [[package]]
@@ -2381,6 +2382,17 @@ dependencies = [
  "quote",
  "syn",
  "synstructure",
+]
+
+[[package]]
+name = "yt_transcript_fetcher"
+version = "0.1.0"
+dependencies = [
+ "once_cell",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
