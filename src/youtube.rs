@@ -1,6 +1,6 @@
 use std::error::Error;
-use std::process::Command;
 use url::Url;
+use yt_transcript_fetcher::fetch_transcript;
 
 use crate::Language;
 
@@ -10,12 +10,7 @@ pub async fn get_youtube_transcript(
 ) -> Result<String, Box<dyn Error>> {
     let video_id = extract_video_id(video_url)?;
 
-    // Check if yt-dlp is available
-    if !is_yt_dlp_available() {
-        return Err("yt-dlp is not installed. Please install it with: pip install yt-dlp".into());
-    }
-
-    fetch_transcript_with_yt_dlp(&video_id, lang).await
+    fetch_transcript(&video_id, &lang.to_lang_code()).await
 }
 
 fn extract_video_id(url: &str) -> Result<String, Box<dyn Error>> {
@@ -48,48 +43,6 @@ fn extract_video_id(url: &str) -> Result<String, Box<dyn Error>> {
         }
         _ => Err("Not a valid YouTube URL".into()),
     }
-}
-
-fn is_yt_dlp_available() -> bool {
-    Command::new("yt-dlp").arg("--version").output().is_ok()
-}
-
-async fn fetch_transcript_with_yt_dlp(
-    video_id: &str,
-    lang: Language,
-) -> Result<String, Box<dyn Error>> {
-    let video_url = format!("https://www.youtube.com/watch?v={}", video_id);
-
-    // Try to download auto-generated English subtitles
-    let output = Command::new("yt-dlp")
-        .arg(&video_url)
-        .arg("--write-auto-subs")
-        .arg("--sub-langs")
-        .arg(lang.to_lang_code())
-        .arg("--sub-format")
-        .arg("vtt")
-        .arg("--skip-download")
-        .arg("-o")
-        .arg(format!("{}.%(ext)s", video_id))
-        .output()?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("yt-dlp failed: {}", stderr).into());
-    }
-
-    // Look for the downloaded .vtt file
-    let vtt_filename = format!("{}.{}.vtt", video_id, lang.to_lang_code());
-
-    if std::path::Path::new(&vtt_filename).exists() {
-        let content = std::fs::read_to_string(&vtt_filename)?;
-        let transcript = extract_text_from_vtt(&content)?;
-        // Clean up the file
-        let _ = std::fs::remove_file(&vtt_filename);
-        return Ok(transcript);
-    }
-
-    Err("No transcript file was downloaded. The video may not have auto-generated captions.".into())
 }
 
 pub fn extract_text_from_vtt(vtt_content: &str) -> Result<String, Box<dyn Error>> {
