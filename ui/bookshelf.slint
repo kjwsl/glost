@@ -1,0 +1,54 @@
+import { ListView, VerticalBox } from "std-widgets.slint";
+
+struct BookData {
+    title: string,
+    author: string,
+    cover: image,
+}
+
+component Book {
+    in property <string> title: "Book Title";
+    in property <string> author: "Author Name";
+    in property <image> cover;
+
+    width: 100%;
+    height: 50px;
+    HorizontalLayout {
+        Image {
+            source: root.cover;
+            width: 20%;
+            height: 35px;
+        }
+        Text {
+            text: root.title;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.author;
+            vertical-alignment: center;
+        }
+    }
+}
+
+export component Bookshelf inherits Window {
+    width: 400px;
+    height: 300px;
+
+    // Example model data (replace with your own array or bind to a property)
+    property <[BookData]> books: [
+        { title: "The Rust Book", author: "Steve Klabnik", cover: @image-url("../assets/rust-book-cover.png") },
+        { title: "Programming Rust", author: "Jim Blandy", cover: @image-url("../assets/programming-rust-cover.png") },
+        // Add more books here...
+    ];
+
+    VerticalBox {
+        ListView {
+            viewport-height: root.books.length * 50px;  // Required for scrolling; adjust based on item height
+            for data in root.books : Book {
+                title: data.title;
+                author: data.author;
+                cover: data.cover;
+            }
+        }
+    }
+}

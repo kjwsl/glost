@@ -1,8 +1,11 @@
 use clap::Parser;
 use glost::{cli::Args, commands::handle_command};
 
+slint::include_modules!();
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = Args::parse();
-    handle_command(args.command).await
+    App::new()?.run()?;
+
+    Ok(())
 }
