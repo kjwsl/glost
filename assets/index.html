@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Glost Reader</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="jszip.min.js"></script>
+    <script src="epub.min.js"></script>
+</head>
+<body>
+    <div id="app">
+        <header>
+            <h1>Glost Reader</h1>
+            <nav>
+                <button onclick="showLibrary()">Library</button>
+                <button onclick="showFlashcards()">Flashcards</button>
+            </nav>
+        </header>
+
+        <main id="main-content">
+            <!-- Content will be injected here -->
+        </main>
+    </div>
+
+    <!-- Definition Modal -->
+    <div id="definition-modal" class="modal hidden">
+        <div class="modal-content">
+            <span class="close-button" onclick="closeModal()">&times;</span>
+            <h2 id="modal-word"></h2>
+            <div id="modal-definitions"></div>
+            <button id="add-flashcard-btn">Add to Flashcards</button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

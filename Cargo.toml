@@ -19,7 +19,9 @@ tokio = { version = "1", features = ["full"] }
 futures = "0.3"
 url = "2.5"
 yt_transcript_fetcher = { path = "./yt_transcript_fetcher" }
-slint = "1.13.1"
+axum = "0.7"
+tower-http = { version = "0.5", features = ["fs", "cors"] }
+chrono = { version = "0.4.43", features = ["serde"] }
+uuid = { version = "1.20.0", features = ["v4", "serde"] }
 
-[build-dependencies]
-slint-build = "1.13.1"
+# Removed slint dependencies

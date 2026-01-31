@@ -9,6 +9,7 @@ use crate::{
     kaikki::get_from_kaikki,
     youtube::get_youtube_transcript,
     Language,
+    start_server,
 };
 
 pub async fn handle_command(command: Command) -> Result<(), Box<dyn std::error::Error>> {
@@ -18,6 +19,9 @@ pub async fn handle_command(command: Command) -> Result<(), Box<dyn std::error::
         }
         Command::Youtube { video_url, lang, output, filter } => {
             handle_youtube(video_url, lang, output, filter).await
+        }
+        Command::Serve { port, dir } => {
+            start_server(port, dir).await
         }
         Command::Filter { action } => {
             handle_filter_action(action).await
