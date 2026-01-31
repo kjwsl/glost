@@ -29,6 +29,13 @@ pub enum Command {
         #[clap(short, long, default_value_t = default_filter_file_path())]
         filter: String,
     },
+    /// Serve the interactive reader
+    Serve {
+        #[clap(short, long, default_value_t = 3000)]
+        port: u16,
+        #[clap(short, long, default_value = ".")]
+        dir: String,
+    },
     /// Manage filter list of known words
     Filter {
         #[clap(subcommand)]
