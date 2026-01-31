@@ -1,0 +1,3 @@
+This is a sample text file for Glost.
+You can click on words like hello, world, computer, and science.
+This is a comprehensive language learning application.

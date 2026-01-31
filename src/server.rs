@@ -2,7 +2,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Json},
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use serde::{Deserialize, Serialize};
@@ -34,6 +34,12 @@ struct AddFlashcardRequest {
     source: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct ReviewFlashcardRequest {
+    card_id: String,
+    quality: u8,
+}
+
 pub async fn start_server(port: u16, dir: String) -> Result<(), Box<dyn std::error::Error>> {
     let state = Arc::new(AppState {
         books_dir: dir.clone(),
@@ -44,6 +50,7 @@ pub async fn start_server(port: u16, dir: String) -> Result<(), Box<dyn std::err
         .route("/api/books/*path", get(get_book_content))
         .route("/api/lookup/:word", get(lookup_word))
         .route("/api/flashcards", get(get_flashcards).post(add_flashcard))
+        .route("/api/flashcards/review", post(review_flashcard))
         .nest_service("/", ServeDir::new("assets"))
         .layer(CorsLayer::permissive())
         .with_state(state);
@@ -150,5 +157,21 @@ async fn add_flashcard(Json(payload): Json<AddFlashcardRequest>) -> impl IntoRes
             format!("Failed to save flashcard: {}", e),
         )
             .into_response(),
+    }
+}
+
+async fn review_flashcard(Json(payload): Json<ReviewFlashcardRequest>) -> impl IntoResponse {
+    let mut list = FlashcardList::load("flashcards.json").unwrap_or_else(|_| FlashcardList::new());
+    
+    if list.review_card(&payload.card_id, payload.quality).is_some() {
+         match list.save("flashcards.json") {
+            Ok(_) => StatusCode::OK.into_response(),
+            Err(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to save flashcard: {}", e),
+            ).into_response(),
+        }
+    } else {
+        (StatusCode::NOT_FOUND, "Card not found").into_response()
     }
 }
