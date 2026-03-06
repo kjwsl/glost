@@ -7,13 +7,13 @@ use crate::Language;
 pub async fn get_youtube_transcript(
     video_url: &str,
     lang: Language,
-) -> Result<String, Box<dyn Error>> {
+) -> Result<String, Box<dyn Error + Send + Sync>> {
     let video_id = extract_video_id(video_url)?;
 
     fetch_transcript(&video_id, &lang.to_lang_code()).await
 }
 
-fn extract_video_id(url: &str) -> Result<String, Box<dyn Error>> {
+fn extract_video_id(url: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
     let parsed_url = Url::parse(url)?;
 
     match parsed_url.host_str() {

@@ -5,7 +5,7 @@ use crate::youtube::extract_text_from_vtt;
 
 pub async fn get_content_from_file(
     file_path: impl AsRef<Path>,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let file_path = file_path.as_ref();
     let ext = file_path
         .extension()
@@ -17,14 +17,15 @@ pub async fn get_content_from_file(
         "epub" => get_content_from_epub(file_path).await,
         "pdf" => get_content_from_pdf(file_path).await,
         "txt" => Ok(tokio::fs::read_to_string(file_path).await?),
-        "vtt" => extract_text_from_vtt(&tokio::fs::read_to_string(file_path).await?),
+        "vtt" => extract_text_from_vtt(&tokio::fs::read_to_string(file_path).await?)
+            .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.to_string().into() }),
         _ => Err(format!("Unsupported file extension: {}", ext).into()),
     }
 }
 
 pub async fn get_content_from_epub(
     file_path: impl AsRef<Path>,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let file_path = file_path.as_ref().to_path_buf();
 
     // epub::doc::EpubDoc blocks and does synchronous zip/file parsing
@@ -41,15 +42,14 @@ pub async fn get_content_from_epub(
 
         Ok::<String, Box<dyn std::error::Error + Send + Sync>>(content)
     })
-    .await?
-    .map_err(|e| -> Box<dyn std::error::Error> { e })?;
+    .await??;
 
     Ok(out)
 }
 
 pub async fn get_content_from_pdf(
     file_path: impl AsRef<Path>,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let file_path = file_path.as_ref().to_path_buf();
     let bytes = tokio::fs::read(&file_path).await?;
     let out = tokio::task::spawn_blocking(move || {
