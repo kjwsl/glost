@@ -610,7 +610,6 @@ dependencies = [
  "dirs",
  "epub",
  "futures",
- "once_cell",
  "pdf-extract",
  "reqwest",
  "serde",

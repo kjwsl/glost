@@ -20,4 +20,3 @@ futures = "0.3"
 url = "2.5"
 yt_transcript_fetcher = { path = "./yt_transcript_fetcher" }
 aho-corasick = "1.1.4"
-once_cell = "1.21.3"
