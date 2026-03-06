@@ -42,7 +42,7 @@ pub async fn get_content_from_epub(
         Ok::<String, Box<dyn std::error::Error + Send + Sync>>(content)
     })
     .await?
-    .map_err(|e| e as Box<dyn std::error::Error>)?;
+    .map_err(|e| -> Box<dyn std::error::Error> { e })?;
 
     Ok(out)
 }
