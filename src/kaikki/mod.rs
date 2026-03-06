@@ -8,13 +8,13 @@ pub async fn get_from_kaikki(
     if word.is_empty() {
         return Err("Word is empty".into());
     }
-    
+
     // Try the original word first
     match try_get_from_kaikki_with_word(word).await {
         Ok(entries) if !entries.is_empty() => return Ok(entries),
         _ => {}
     }
-    
+
     // If original word fails or returns no entries, try lowercase
     let lower_word = word.to_lowercase();
     if lower_word != word {

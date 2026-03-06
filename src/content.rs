@@ -1,5 +1,5 @@
-use std::{collections::HashMap, path::Path};
 use epub::doc::EpubDoc;
+use std::{collections::HashMap, path::Path};
 
 use crate::youtube::extract_text_from_vtt;
 
@@ -12,7 +12,7 @@ pub async fn get_content_from_file(
         .ok_or("File has no extension")?
         .to_str()
         .unwrap();
-        
+
     match ext {
         "epub" => get_content_from_epub(file_path).await,
         "pdf" => get_content_from_pdf(file_path).await,
@@ -51,10 +51,9 @@ pub async fn get_content_from_pdf(
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let file_path = file_path.as_ref().to_path_buf();
     let bytes = tokio::fs::read(&file_path).await?;
-    let out = tokio::task::spawn_blocking(move || {
-        pdf_extract::extract_text_from_mem(bytes.as_slice())
-    })
-    .await??;
+    let out =
+        tokio::task::spawn_blocking(move || pdf_extract::extract_text_from_mem(bytes.as_slice()))
+            .await??;
     Ok(out)
 }
 

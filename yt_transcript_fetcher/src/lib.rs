@@ -2,9 +2,8 @@ use once_cell::sync::Lazy;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
-pub static YOUTUBE_API_KEY: Lazy<String> = Lazy::new(|| {
-    std::env::var("YOUTUBE_API_KEY").expect("YOUTUBE_API_KEY must be set")
-});
+pub static YOUTUBE_API_KEY: Lazy<String> =
+    Lazy::new(|| std::env::var("YOUTUBE_API_KEY").expect("YOUTUBE_API_KEY must be set"));
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CaptionListResponse {
@@ -29,11 +28,15 @@ pub async fn fetch_transcript(
     video_id: &str,
     lang: &str,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    println!("Fetching transcript for video ID: {}, language: {}", video_id, lang);
+    println!(
+        "Fetching transcript for video ID: {}, language: {}",
+        video_id, lang
+    );
     let client = Client::new();
     let captions_url = format!(
         "https://www.googleapis.com/youtube/v3/captions?part=snippet&videoId={}&key={}",
-        video_id, YOUTUBE_API_KEY.clone()
+        video_id,
+        YOUTUBE_API_KEY.clone()
     );
 
     let response = client
@@ -51,7 +54,8 @@ pub async fn fetch_transcript(
 
     let caption_url = format!(
         "https://www.googleapis.com/youtube/v3/captions/{}?tfmt=srt&key={}",
-        caption.id, YOUTUBE_API_KEY.clone()
+        caption.id,
+        YOUTUBE_API_KEY.clone()
     );
 
     let caption_text = client

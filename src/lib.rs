@@ -9,7 +9,7 @@ pub mod language;
 pub mod youtube;
 
 pub use filter::FilterList;
-pub use glossary::{Glossary, WordEntry, POS};
+pub use glossary::{Glossary, POS, WordEntry};
 pub use language::Language;
 
 // Re-export for backward compatibility and convenience
