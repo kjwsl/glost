@@ -28,7 +28,7 @@ pub struct CaptionSnippet {
 pub async fn fetch_transcript(
     video_id: &str,
     lang: &str,
-) -> Result<String, Box<dyn std::error::Error>> {
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     println!("Fetching transcript for video ID: {}, language: {}", video_id, lang);
     let client = Client::new();
     let captions_url = format!(
@@ -67,7 +67,7 @@ pub async fn fetch_transcript(
     Ok(transcript)
 }
 
-fn parse_srt(srt: &str) -> Result<String, Box<dyn std::error::Error>> {
+fn parse_srt(srt: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let mut transcript = String::with_capacity(srt.len());
     for block in srt.split("\n\n") {
         let mut lines = block.lines().skip(2);
