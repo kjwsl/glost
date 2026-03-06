@@ -17,8 +17,7 @@ pub async fn get_content_from_file(
         "epub" => get_content_from_epub(file_path).await,
         "pdf" => get_content_from_pdf(file_path).await,
         "txt" => Ok(tokio::fs::read_to_string(file_path).await?),
-        "vtt" => extract_text_from_vtt(&tokio::fs::read_to_string(file_path).await?)
-            .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.to_string().into() }),
+        "vtt" => extract_text_from_vtt(&tokio::fs::read_to_string(file_path).await?),
         _ => Err(format!("Unsupported file extension: {}", ext).into()),
     }
 }
