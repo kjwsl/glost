@@ -11,7 +11,7 @@ use crate::{
     Language,
 };
 
-pub async fn handle_command(command: Command) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn handle_command(command: Command) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match command {
         Command::Generate { file_path, lang, output, filter } => {
             handle_generate(file_path, lang, output, filter).await
@@ -30,7 +30,7 @@ async fn handle_generate(
     lang: Language,
     output: String,
     filter_file: String,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let file_path = PathBuf::from(file_path);
     if !file_path.exists() {
         return Err("File does not exist".into());
@@ -83,7 +83,7 @@ async fn handle_youtube(
     lang: Language,
     output: String,
     filter_file: String,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("Fetching transcript from YouTube video...");
     let content = get_youtube_transcript(&video_url, lang).await?;
     println!("Transcript fetched successfully!");
@@ -129,7 +129,7 @@ async fn handle_youtube(
     Ok(())
 }
 
-async fn handle_filter_action(action: FilterAction) -> Result<(), Box<dyn std::error::Error>> {
+async fn handle_filter_action(action: FilterAction) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match action {
         FilterAction::Add { words, file, lang } => {
             let mut filter_list = FilterList::load(&file)?;
