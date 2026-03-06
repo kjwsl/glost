@@ -36,7 +36,7 @@ async fn handle_generate(
         return Err("File does not exist".into());
     }
 
-    let content = get_content_from_file(file_path).await?;
+    let content = get_content_from_file(file_path).await.map_err(|e| e as Box<dyn std::error::Error>)?;
     let word_list = get_word_list_from_content(&content);
 
     // Load filter list and exclude filtered words
