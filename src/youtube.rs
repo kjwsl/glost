@@ -1,4 +1,7 @@
 use std::error::Error;
+use std::sync::LazyLock;
+
+use aho_corasick::AhoCorasick;
 use url::Url;
 use yt_transcript_fetcher::fetch_transcript;
 
@@ -10,7 +13,7 @@ pub async fn get_youtube_transcript(
 ) -> Result<String, Box<dyn Error + Send + Sync>> {
     let video_id = extract_video_id(video_url)?;
 
-    fetch_transcript(&video_id, &lang.to_lang_code()).await
+    fetch_transcript(&video_id, lang.to_lang_code()).await
 }
 
 fn extract_video_id(url: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
@@ -45,7 +48,32 @@ fn extract_video_id(url: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
     }
 }
 
-pub fn extract_text_from_vtt(vtt_content: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
+static SUBTITLE_PAIRS: &[(&str, &str)] = &[
+    ("<c>", ""),
+    ("</c>", ""),
+    ("<i>", ""),
+    ("</i>", ""),
+    ("<b>", ""),
+    ("</b>", ""),
+    ("<u>", ""),
+    ("</u>", ""),
+    ("&amp;", "&"),
+    ("&lt;", "<"),
+    ("&gt;", ">"),
+    ("&quot;", "\""),
+    ("&#39;", "'"),
+    ("<v ", ""),
+    (">", " "),
+];
+
+static SUBTITLE_CLEANER: LazyLock<(AhoCorasick, Vec<&'static str>)> = LazyLock::new(|| {
+    let patterns: Vec<&str> = SUBTITLE_PAIRS.iter().map(|(p, _)| *p).collect();
+    let replacements: Vec<&str> = SUBTITLE_PAIRS.iter().map(|(_, r)| *r).collect();
+    let ac = AhoCorasick::new(patterns).expect("Failed to build AhoCorasick automaton");
+    (ac, replacements)
+});
+
+pub fn extract_text_from_vtt(vtt_content: &str) -> Result<String, Box<dyn Error>> {
     let mut transcript = String::new();
     let lines: Vec<&str> = vtt_content.lines().collect();
 
@@ -91,26 +119,9 @@ pub fn extract_text_from_vtt(vtt_content: &str) -> Result<String, Box<dyn Error 
 }
 
 fn clean_subtitle_text(text: &str) -> String {
-    // Remove HTML tags and clean up subtitle text
-    let text = text
-        .replace("<c>", "")
-        .replace("</c>", "")
-        .replace("<i>", "")
-        .replace("</i>", "")
-        .replace("<b>", "")
-        .replace("</b>", "")
-        .replace("<u>", "")
-        .replace("</u>", "")
-        .replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'");
-
-    // Remove timestamp markers and other VTT formatting
-    let text = text.replace("<v ", "").replace(">", " ");
-
-    text.trim().to_string()
+    // Remove HTML tags, clean up subtitle text, and remove VTT formatting
+    let (ac, replacements) = &*SUBTITLE_CLEANER;
+    ac.replace_all(text, replacements).trim().to_string()
 }
 
 #[cfg(test)]
