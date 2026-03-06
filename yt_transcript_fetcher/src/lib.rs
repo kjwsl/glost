@@ -80,7 +80,12 @@ fn parse_srt(srt: &str) -> Result<String, Box<dyn std::error::Error>> {
             transcript.push(' ');
         }
     }
-    Ok(transcript.trim().to_string())
+
+    if transcript.ends_with(' ') {
+        transcript.pop();
+    }
+
+    Ok(transcript)
 }
 
 #[cfg(test)]
