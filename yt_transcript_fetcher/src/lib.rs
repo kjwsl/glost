@@ -80,7 +80,19 @@ fn parse_srt(srt: &str) -> Result<String, Box<dyn std::error::Error + Send + Syn
             transcript.push(' ');
         }
     }
-    Ok(transcript.trim().to_string())
+
+    if let Some((idx, ch)) = transcript
+        .char_indices()
+        .rfind(|&(_, c)| !c.is_whitespace())
+    {
+        // Truncate to just after the last non-whitespace character
+        transcript.truncate(idx + ch.len_utf8());
+    } else {
+        // The transcript is all whitespace; clear it
+        transcript.clear();
+    }
+
+    Ok(transcript)
 }
 
 #[cfg(test)]
