@@ -68,14 +68,45 @@ pub async fn fetch_transcript(
 }
 
 fn parse_srt(srt: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let mut transcript = String::new();
+    let mut transcript = String::with_capacity(srt.len());
     for block in srt.split("\n\n") {
-        let lines: Vec<&str> = block.lines().collect();
-        if lines.len() >= 3 {
-            let text = lines[2..].join(" ");
-            transcript.push_str(&text);
+        let mut lines = block.lines().skip(2);
+        if let Some(first_line) = lines.next() {
+            transcript.push_str(first_line);
+            for line in lines {
+                transcript.push(' ');
+                transcript.push_str(line);
+            }
             transcript.push(' ');
         }
     }
     Ok(transcript.trim().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Instant;
+
+    #[test]
+    fn bench_parse_srt() {
+        let mut srt = String::new();
+        for i in 1..1000 {
+            srt.push_str(&format!("{}\n00:00:0{:03},000 --> 00:00:0{:03},500\nLine 1 for block {}\nLine 2 for block {}\n\n", i, i % 1000, i % 1000, i, i));
+        }
+
+        let start = Instant::now();
+        for _ in 0..1000 {
+            let _ = parse_srt(&srt).unwrap();
+        }
+        let duration = start.elapsed();
+        println!("Time taken for 1000 iterations: {:?}", duration);
+    }
+
+    #[test]
+    fn test_parse_srt_correctness() {
+        let srt = "1\n00:00:00,000 --> 00:00:01,000\nHello world\n\n2\n00:00:01,000 --> 00:00:02,000\nThis is a test\nwith two lines";
+        let expected = "Hello world This is a test with two lines";
+        assert_eq!(parse_srt(srt).unwrap(), expected);
+    }
 }
