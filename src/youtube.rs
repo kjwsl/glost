@@ -10,7 +10,7 @@ pub async fn get_youtube_transcript(
 ) -> Result<String, Box<dyn Error>> {
     let video_id = extract_video_id(video_url)?;
 
-    fetch_transcript(&video_id, &lang.to_lang_code()).await
+    fetch_transcript(&video_id, lang.to_lang_code()).await
 }
 
 fn extract_video_id(url: &str) -> Result<String, Box<dyn Error>> {
@@ -44,6 +44,21 @@ fn extract_video_id(url: &str) -> Result<String, Box<dyn Error>> {
         _ => Err("Not a valid YouTube URL".into()),
     }
 }
+
+use aho_corasick::AhoCorasick;
+use once_cell::sync::Lazy;
+
+static SUBTITLE_CLEANER: Lazy<AhoCorasick> = Lazy::new(|| {
+    let patterns = &[
+        "<c>", "</c>", "<i>", "</i>", "<b>", "</b>", "<u>", "</u>", "&amp;", "&lt;", "&gt;",
+        "&quot;", "&#39;", "<v ", ">",
+    ];
+    AhoCorasick::new(patterns).expect("Failed to build AhoCorasick automaton")
+});
+
+static SUBTITLE_REPLACEMENTS: &[&str] = &[
+    "", "", "", "", "", "", "", "", "&", "<", ">", "\"", "'", "", " ",
+];
 
 pub fn extract_text_from_vtt(vtt_content: &str) -> Result<String, Box<dyn Error>> {
     let mut transcript = String::new();
@@ -91,26 +106,11 @@ pub fn extract_text_from_vtt(vtt_content: &str) -> Result<String, Box<dyn Error>
 }
 
 fn clean_subtitle_text(text: &str) -> String {
-    // Remove HTML tags and clean up subtitle text
-    let text = text
-        .replace("<c>", "")
-        .replace("</c>", "")
-        .replace("<i>", "")
-        .replace("</i>", "")
-        .replace("<b>", "")
-        .replace("</b>", "")
-        .replace("<u>", "")
-        .replace("</u>", "")
-        .replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'");
-
-    // Remove timestamp markers and other VTT formatting
-    let text = text.replace("<v ", "").replace(">", " ");
-
-    text.trim().to_string()
+    // Remove HTML tags, clean up subtitle text, and remove VTT formatting
+    SUBTITLE_CLEANER
+        .replace_all(text, SUBTITLE_REPLACEMENTS)
+        .trim()
+        .to_string()
 }
 
 #[cfg(test)]
