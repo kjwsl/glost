@@ -1,27 +1,33 @@
-use futures::{stream::FuturesUnordered, StreamExt};
+use futures::{StreamExt, stream::FuturesUnordered};
 use std::path::PathBuf;
 
 use crate::{
+    Language,
     cli::{Command, FilterAction},
     content::{get_content_from_file, get_word_list_from_content},
     filter::FilterList,
-    glossary::{generate_markdown, write_glossary_to_file, Glossary, WordEntry},
+    glossary::{Glossary, WordEntry, generate_markdown, write_glossary_to_file},
     kaikki::get_from_kaikki,
     youtube::get_youtube_transcript,
-    Language,
 };
 
-pub async fn handle_command(command: Command) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn handle_command(
+    command: Command,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match command {
-        Command::Generate { file_path, lang, output, filter } => {
-            handle_generate(file_path, lang, output, filter).await
-        }
-        Command::Youtube { video_url, lang, output, filter } => {
-            handle_youtube(video_url, lang, output, filter).await
-        }
-        Command::Filter { action } => {
-            handle_filter_action(action).await
-        }
+        Command::Generate {
+            file_path,
+            lang,
+            output,
+            filter,
+        } => handle_generate(file_path, lang, output, filter).await,
+        Command::Youtube {
+            video_url,
+            lang,
+            output,
+            filter,
+        } => handle_youtube(video_url, lang, output, filter).await,
+        Command::Filter { action } => handle_filter_action(action).await,
     }
 }
 
@@ -36,7 +42,7 @@ async fn handle_generate(
         return Err("File does not exist".into());
     }
 
-    let content = get_content_from_file(file_path).await.map_err(|e| -> Box<dyn std::error::Error> { e })?;
+    let content = get_content_from_file(file_path).await?;
     let word_list = get_word_list_from_content(&content);
 
     // Load filter list and exclude filtered words
@@ -59,10 +65,10 @@ async fn handle_generate(
         match result {
             Ok((_word, frequency, Ok(entries))) => {
                 for entry in entries {
-                    if entry.lang_code.to_lowercase() == lang.to_lang_code() {
-                        if let Some(word_entry) = WordEntry::from_kaikki_entry(entry, frequency) {
-                            glossary.insert(word_entry);
-                        }
+                    if entry.lang_code.to_lowercase() == lang.to_lang_code()
+                        && let Some(word_entry) = WordEntry::from_kaikki_entry(entry, frequency)
+                    {
+                        glossary.insert(word_entry);
                     }
                 }
             }
@@ -74,7 +80,11 @@ async fn handle_generate(
     let markdown = generate_markdown(&glossary);
     write_glossary_to_file(&markdown, &output)?;
 
-    println!("Generated glossary with {} entries in {}", glossary.len(), output);
+    println!(
+        "Generated glossary with {} entries in {}",
+        glossary.len(),
+        output
+    );
     Ok(())
 }
 
@@ -87,7 +97,7 @@ async fn handle_youtube(
     println!("Fetching transcript from YouTube video...");
     let content = get_youtube_transcript(&video_url, lang).await?;
     println!("Transcript fetched successfully!");
-    
+
     let word_list = get_word_list_from_content(&content);
 
     // Load filter list and exclude filtered words
@@ -110,10 +120,10 @@ async fn handle_youtube(
         match result {
             Ok((_word, frequency, Ok(entries))) => {
                 for entry in entries {
-                    if entry.lang_code.to_lowercase() == lang.to_lang_code() {
-                        if let Some(word_entry) = WordEntry::from_kaikki_entry(entry, frequency) {
-                            glossary.insert(word_entry);
-                        }
+                    if entry.lang_code.to_lowercase() == lang.to_lang_code()
+                        && let Some(word_entry) = WordEntry::from_kaikki_entry(entry, frequency)
+                    {
+                        glossary.insert(word_entry);
                     }
                 }
             }
@@ -125,11 +135,17 @@ async fn handle_youtube(
     let markdown = generate_markdown(&glossary);
     write_glossary_to_file(&markdown, &output)?;
 
-    println!("Generated glossary with {} entries in {}", glossary.len(), output);
+    println!(
+        "Generated glossary with {} entries in {}",
+        glossary.len(),
+        output
+    );
     Ok(())
 }
 
-async fn handle_filter_action(action: FilterAction) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn handle_filter_action(
+    action: FilterAction,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match action {
         FilterAction::Add { words, file, lang } => {
             let mut filter_list = FilterList::load(&file)?;
@@ -175,21 +191,19 @@ async fn handle_filter_action(action: FilterAction) -> Result<(), Box<dyn std::e
                 }
             }
         }
-        FilterAction::Clear { file, lang } => {
-            match lang {
-                Some(l) => {
-                    let mut filter_list = FilterList::load(&file)?;
-                    filter_list.clear_language(l);
-                    filter_list.save(&file)?;
-                    println!("Cleared {} filter list", l);
-                }
-                None => {
-                    let filter_list = FilterList::new();
-                    filter_list.save(&file)?;
-                    println!("Cleared all filter lists");
-                }
+        FilterAction::Clear { file, lang } => match lang {
+            Some(l) => {
+                let mut filter_list = FilterList::load(&file)?;
+                filter_list.clear_language(l);
+                filter_list.save(&file)?;
+                println!("Cleared {} filter list", l);
             }
-        }
+            None => {
+                let filter_list = FilterList::new();
+                filter_list.save(&file)?;
+                println!("Cleared all filter lists");
+            }
+        },
     }
     Ok(())
 }

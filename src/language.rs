@@ -77,4 +77,3 @@ impl std::str::FromStr for Language {
         }
     }
 }
-

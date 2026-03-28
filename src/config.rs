@@ -12,13 +12,13 @@ pub fn default_filter_file_path() -> String {
 pub fn get_config_dir() -> PathBuf {
     let home_dir = dirs::home_dir()
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-    
+
     let config_dir = home_dir.join(".config").join("glost");
-    
+
     // Create the config directory if it doesn't exist
     if !config_dir.exists() {
         let _ = std::fs::create_dir_all(&config_dir);
     }
-    
+
     config_dir
 }

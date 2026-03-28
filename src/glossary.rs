@@ -1,5 +1,5 @@
+use crate::{Language, kaikki};
 use std::{collections::HashSet, str::FromStr};
-use crate::{kaikki, Language};
 
 pub type Glossary = HashSet<WordEntry>;
 
@@ -24,7 +24,7 @@ impl WordEntry {
     }
 
     pub fn from_kaikki_entry(entry: kaikki::Entry, frequency: usize) -> Option<Self> {
-        let pos = POS::from_str(&entry.pos);
+        let pos = POS::from_str(&entry.pos).unwrap();
         let lang = Language::from_str(&entry.lang).ok()?;
 
         let meaning = entry
@@ -54,7 +54,7 @@ impl WordEntry {
     /// Merge this entry with another, combining frequencies and meanings from different POS
     pub fn merge_with(&mut self, other: &WordEntry) {
         self.frequency += other.frequency;
-        
+
         // If this is the first merge (meaning is in original format), convert it
         if !self.meaning.contains(" | ") {
             let formatted_meaning = if self.meaning.is_empty() {
@@ -64,14 +64,14 @@ impl WordEntry {
             };
             self.meaning = formatted_meaning;
         }
-        
+
         // Format the other entry's meaning
         let other_formatted = if other.meaning.is_empty() {
             String::new()
         } else {
             format!("*{}*: {}", other.pos, other.meaning)
         };
-        
+
         // Only add if it's different and not empty
         if !other_formatted.is_empty() && !self.meaning.contains(&other_formatted) {
             if self.meaning.is_empty() {
@@ -80,7 +80,7 @@ impl WordEntry {
                 self.meaning = format!("{} | {}", self.meaning, other_formatted);
             }
         }
-        
+
         // Set POS to Other if we have multiple different parts of speech
         if self.pos != other.pos {
             self.pos = POS::Other;
@@ -104,9 +104,10 @@ pub enum POS {
     Other,
 }
 
-impl POS {
-    pub fn from_str(s: &str) -> Self {
-        match s {
+impl FromStr for POS {
+    type Err = &'static str;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
             "noun" => POS::Noun,
             "verb" => POS::Verb,
             "adj" => POS::Adjective,
@@ -119,7 +120,7 @@ impl POS {
             "intj" => POS::Interjection,
             "particle" => POS::Particle,
             _ => POS::Other,
-        }
+        })
     }
 }
 
@@ -144,8 +145,9 @@ impl std::fmt::Display for POS {
 }
 
 pub fn generate_markdown(glossary: &Glossary) -> String {
-    let mut merged_entries: std::collections::HashMap<(String, Language), WordEntry> = std::collections::HashMap::new();
-    
+    let mut merged_entries: std::collections::HashMap<(String, Language), WordEntry> =
+        std::collections::HashMap::new();
+
     for entry in glossary {
         let key = entry.merge_key();
         match merged_entries.get_mut(&key) {
@@ -167,7 +169,7 @@ pub fn generate_markdown(glossary: &Glossary) -> String {
 
     for entry in glossary_vec {
         markdown.push_str(&format!("### {} ({})\n", entry.word, entry.frequency));
-        
+
         // Handle merged meanings with different POS
         if entry.meaning.contains(" | ") {
             // Multiple POS definitions - create bullet points

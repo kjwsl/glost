@@ -73,7 +73,7 @@ static SUBTITLE_CLEANER: LazyLock<(AhoCorasick, Vec<&'static str>)> = LazyLock::
     (ac, replacements)
 });
 
-pub fn extract_text_from_vtt(vtt_content: &str) -> Result<String, Box<dyn Error>> {
+pub fn extract_text_from_vtt(vtt_content: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
     let mut transcript = String::new();
     let lines: Vec<&str> = vtt_content.lines().collect();
 

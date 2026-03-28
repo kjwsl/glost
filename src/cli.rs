@@ -1,5 +1,5 @@
-use clap::{Parser, Subcommand};
 use crate::{Language, config::default_filter_file_path};
+use clap::{Parser, Subcommand};
 
 #[derive(Debug, Clone, Parser)]
 pub struct Args {
