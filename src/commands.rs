@@ -6,7 +6,7 @@ use crate::{
     cli::{Command, FilterAction},
     content::{get_content_from_file, get_word_list_from_content},
     filter::FilterList,
-    glossary::{Glossary, WordEntry, generate_markdown, write_glossary_to_file},
+    glossary::{Glossary, WordEntry, generate_markdown, write_glossary_to_file, get_merged_entries},
     kaikki::get_from_kaikki,
     youtube::get_youtube_transcript,
 };
@@ -122,18 +122,17 @@ async fn process_content_to_glossary(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let word_list = get_word_list_from_content(&content);
 
-    // Load filter list and exclude filtered words
+    // 1. Initial Filtering
     let filter_list = FilterList::load(&filter_file)?;
-    let mut filtered_word_list: Vec<(String, (usize, Option<String>))> = word_list
+    let mut words_to_review: Vec<(String, (usize, Option<String>))> = word_list
         .into_iter()
         .filter(|(word, _)| !filter_list.contains(word, lang))
         .collect();
 
-    // If interactive mode is enabled, let the user review the words
+    // 2. Interactive TUI Review
     if interactive {
-        let (kept_words, known_words) = crate::tui::run_tui(filtered_word_list, lang)?;
+        let (kept_words, known_words) = crate::tui::run_tui(words_to_review, lang)?;
         
-        // Update the filter list with new known words
         if !known_words.is_empty() {
             let mut filter_list = FilterList::load(&filter_file)?;
             for word in known_words {
@@ -142,51 +141,72 @@ async fn process_content_to_glossary(
             filter_list.save(&filter_file)?;
             println!("Updated filter list with new known words.");
         }
-        
-        filtered_word_list = kept_words;
+        words_to_review = kept_words;
     }
 
-    let mut analysis_results: Vec<(String, usize, Option<String>, Option<String>, Option<String>)> = Vec::new();
-
-    // If AI is enabled, analyze the words
-    if let Some(model) = ai_model {
-        println!("Analyzing words using AI model '{}'...", model);
-        let mut ai_futures = FuturesUnordered::new();
-
-        for (word, (frequency, context)) in filtered_word_list {
-            let model = model.clone();
-            let ai_url = ai_url.clone();
-            let context = context.clone();
-            ai_futures.push(tokio::spawn(async move {
-                let analysis = if let Some(ctx) = &context {
-                    crate::ai::analyze_word(&word, ctx, lang, &model, &ai_url)
-                        .await
-                        .ok()
-                } else {
-                    None
-                };
-                
-                let lemma = analysis.as_ref().map(|a| a.lemma.to_lowercase()).unwrap_or(word.clone());
-                let cefr = analysis.as_ref().and_then(|a| a.cefr.clone());
-                let grammar = analysis.as_ref().and_then(|a| a.grammar.clone());
-                
-                (lemma, frequency, context, cefr, grammar)
-            }));
-        }
-
-        while let Some(result) = ai_futures.next().await {
-            if let Ok(data) = result {
-                analysis_results.push(data);
-            }
-        }
+    // 3. AI Analysis (Lemmatization, CEFR, Grammar)
+    let analyzed_words = if let Some(model) = ai_model {
+        run_ai_analysis(words_to_review, lang, &model, &ai_url).await?
     } else {
-        analysis_results = filtered_word_list.into_iter().map(|(w, (f, c))| (w, f, c, None, None)).collect();
+        words_to_review.into_iter().map(|(w, (f, c))| (w, f, c, None, None)).collect()
+    };
+
+    // 4. Dictionary Lookup (Kaikki)
+    let glossary = fetch_definitions(analyzed_words, lang).await?;
+
+    // 5. Generate Outputs (Anki, Markdown)
+    generate_outputs(glossary, lang, output, anki).await
+}
+
+type AnalyzedWord = (String, usize, Option<String>, Option<String>, Option<String>);
+
+async fn run_ai_analysis(
+    words: Vec<(String, (usize, Option<String>))>,
+    lang: Language,
+    model: &str,
+    ai_url: &str,
+) -> Result<Vec<AnalyzedWord>, Box<dyn std::error::Error + Send + Sync>> {
+    println!("Analyzing words using AI model '{}'...", model);
+    let mut ai_futures = FuturesUnordered::new();
+    let mut results = Vec::new();
+
+    for (word, (frequency, context)) in words {
+        let model = model.to_string();
+        let ai_url = ai_url.to_string();
+        let context = context.clone();
+        ai_futures.push(tokio::spawn(async move {
+            let analysis = if let Some(ctx) = &context {
+                crate::ai::analyze_word(&word, ctx, lang, &model, &ai_url)
+                    .await
+                    .ok()
+            } else {
+                None
+            };
+            
+            let lemma = analysis.as_ref().map(|a| a.lemma.to_lowercase()).unwrap_or(word.clone());
+            let cefr = analysis.as_ref().and_then(|a| a.cefr.clone());
+            let grammar = analysis.as_ref().and_then(|a| a.grammar.clone());
+            
+            (lemma, frequency, context, cefr, grammar)
+        }));
     }
 
+    while let Some(result) = ai_futures.next().await {
+        if let Ok(data) = result {
+            results.push(data);
+        }
+    }
+    Ok(results)
+}
+
+async fn fetch_definitions(
+    analyzed_words: Vec<AnalyzedWord>,
+    lang: Language,
+) -> Result<Glossary, Box<dyn std::error::Error + Send + Sync>> {
     let mut glossary = Glossary::new();
     let mut futures = FuturesUnordered::new();
 
-    for (word, frequency, context, cefr, grammar) in analysis_results {
+    for (word, frequency, context, cefr, grammar) in analyzed_words {
         let context = context.clone();
         futures.push(tokio::spawn(async move {
             (word.clone(), frequency, context, cefr, grammar, get_from_kaikki(&word).await)
@@ -198,11 +218,9 @@ async fn process_content_to_glossary(
             Ok((_word, frequency, context, cefr, grammar, Ok(entries))) => {
                 for entry in entries {
                     if entry.lang_code.to_lowercase() == lang.to_lang_code()
-                        && let Some(mut word_entry) =
-                            WordEntry::from_kaikki_entry(entry, frequency, context.clone())
+                        && let Some(word_entry) =
+                            WordEntry::from_kaikki_entry(entry, frequency, context.clone(), grammar.clone(), cefr.clone())
                     {
-                        word_entry.cefr_level = cefr.clone();
-                        word_entry.grammar_note = grammar.clone();
                         glossary.insert(word_entry);
                     }
                 }
@@ -211,14 +229,22 @@ async fn process_content_to_glossary(
             Err(e) => eprintln!("Task failed: {}", e),
         }
     }
+    Ok(glossary)
+}
 
-    let mut merged_entries = crate::glossary::get_merged_entries(&glossary);
+async fn generate_outputs(
+    glossary: Glossary,
+    lang: Language,
+    output_path: String,
+    anki_path: Option<String>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut merged_entries = get_merged_entries(&glossary);
 
     // Generate audio if Anki is enabled
-    if anki.is_some() {
+    if let Some(ref path) = anki_path {
         println!("Generating audio for Anki deck...");
         let temp_dir = std::env::temp_dir().join("glost_audio");
-        let _ = std::fs::remove_dir_all(&temp_dir); // Clear old audio
+        let _ = std::fs::remove_dir_all(&temp_dir);
         std::fs::create_dir_all(&temp_dir)?;
         
         for entry in &mut merged_entries {
@@ -226,20 +252,18 @@ async fn process_content_to_glossary(
                 entry.audio_path = Some(temp_dir.join(filename).to_str().unwrap().to_string());
             }
         }
-    }
 
-    if let Some(anki_path) = anki {
-        println!("Generating Anki deck in {}...", anki_path);
-        crate::anki::generate_anki_deck(&merged_entries, "Glost Deck", &anki_path)?;
+        println!("Generating Anki deck in {}...", path);
+        crate::anki::generate_anki_deck(&merged_entries, "Glost Deck", path)?;
     }
 
     let markdown = generate_markdown(&merged_entries);
-    write_glossary_to_file(&markdown, &output)?;
+    write_glossary_to_file(&markdown, &output_path)?;
 
     println!(
         "Generated glossary with {} merged entries in {}",
         merged_entries.len(),
-        output
+        output_path
     );
     Ok(())
 }

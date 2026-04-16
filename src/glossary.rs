@@ -42,6 +42,8 @@ impl WordEntry {
         entry: kaikki::Entry,
         frequency: usize,
         context: Option<String>,
+        grammar_note: Option<String>,
+        cefr_level: Option<String>,
     ) -> Option<Self> {
         let pos = POS::from_str(&entry.pos).unwrap();
         let lang = Language::from_str(&entry.lang).ok()?;
@@ -63,8 +65,8 @@ impl WordEntry {
             lang,
             frequency,
             context,
-            grammar_note: None,
-            cefr_level: None,
+            grammar_note,
+            cefr_level,
             audio_path: None,
         })
     }
