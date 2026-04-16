@@ -79,7 +79,9 @@ async fn handle_web(
     anki: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("Fetching content from URL: {}...", url);
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .build()?;
     let res = client.get(&url).send().await?;
     
     if !res.status().is_success() {
