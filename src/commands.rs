@@ -22,7 +22,8 @@ pub async fn handle_command(
             filter,
             ai_model,
             ai_url,
-        } => handle_generate(file_path, lang, output, filter, ai_model, ai_url).await,
+            interactive,
+        } => handle_generate(file_path, lang, output, filter, ai_model, ai_url, interactive).await,
         Command::Youtube {
             video_url,
             lang,
@@ -30,7 +31,8 @@ pub async fn handle_command(
             filter,
             ai_model,
             ai_url,
-        } => handle_youtube(video_url, lang, output, filter, ai_model, ai_url).await,
+            interactive,
+        } => handle_youtube(video_url, lang, output, filter, ai_model, ai_url, interactive).await,
         Command::Web {
             url,
             lang,
@@ -38,7 +40,8 @@ pub async fn handle_command(
             filter,
             ai_model,
             ai_url,
-        } => handle_web(url, lang, output, filter, ai_model, ai_url).await,
+            interactive,
+        } => handle_web(url, lang, output, filter, ai_model, ai_url, interactive).await,
         Command::Filter { action } => handle_filter_action(action).await,
     }
 }
@@ -50,6 +53,7 @@ async fn handle_generate(
     filter_file: String,
     ai_model: Option<String>,
     ai_url: String,
+    interactive: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let file_path = PathBuf::from(file_path);
     if !file_path.exists() {
@@ -57,7 +61,7 @@ async fn handle_generate(
     }
 
     let content = get_content_from_file(file_path).await?;
-    process_content_to_glossary(content, lang, output, filter_file, ai_model, ai_url).await
+    process_content_to_glossary(content, lang, output, filter_file, ai_model, ai_url, interactive).await
 }
 
 async fn handle_web(
@@ -67,6 +71,7 @@ async fn handle_web(
     filter_file: String,
     ai_model: Option<String>,
     ai_url: String,
+    interactive: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("Fetching content from URL: {}...", url);
     let client = reqwest::Client::new();
@@ -80,7 +85,7 @@ async fn handle_web(
     let content = crate::content::extract_text_from_html(&html)?;
     println!("Content fetched successfully!");
 
-    process_content_to_glossary(content, lang, output, filter_file, ai_model, ai_url).await
+    process_content_to_glossary(content, lang, output, filter_file, ai_model, ai_url, interactive).await
 }
 
 async fn handle_youtube(
@@ -90,12 +95,13 @@ async fn handle_youtube(
     filter_file: String,
     ai_model: Option<String>,
     ai_url: String,
+    interactive: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("Fetching transcript from YouTube video...");
     let content = get_youtube_transcript(&video_url, lang).await?;
     println!("Transcript fetched successfully!");
 
-    process_content_to_glossary(content, lang, output, filter_file, ai_model, ai_url).await
+    process_content_to_glossary(content, lang, output, filter_file, ai_model, ai_url, interactive).await
 }
 
 async fn process_content_to_glossary(
@@ -105,6 +111,7 @@ async fn process_content_to_glossary(
     filter_file: String,
     ai_model: Option<String>,
     ai_url: String,
+    interactive: bool,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let word_list = get_word_list_from_content(&content);
 
@@ -114,6 +121,23 @@ async fn process_content_to_glossary(
         .into_iter()
         .filter(|(word, _)| !filter_list.contains(word, lang))
         .collect();
+
+    // If interactive mode is enabled, let the user review the words
+    if interactive {
+        let (kept_words, known_words) = crate::tui::run_tui(filtered_word_list, lang)?;
+        
+        // Update the filter list with new known words
+        if !known_words.is_empty() {
+            let mut filter_list = FilterList::load(&filter_file)?;
+            for word in known_words {
+                filter_list.add(word, lang);
+            }
+            filter_list.save(&filter_file)?;
+            println!("Updated filter list with new known words.");
+        }
+        
+        filtered_word_list = kept_words;
+    }
 
     // If AI is enabled, lemmatize the words
     if let Some(model) = ai_model {

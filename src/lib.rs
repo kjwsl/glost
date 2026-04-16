@@ -7,6 +7,7 @@ pub mod filter;
 pub mod glossary;
 pub mod kaikki;
 pub mod language;
+pub mod tui;
 pub mod youtube;
 
 pub use filter::FilterList;

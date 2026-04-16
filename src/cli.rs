@@ -24,6 +24,9 @@ pub enum Command {
         /// Optional: URL for the local AI API (defaults to http://localhost:11434)
         #[clap(long, default_value = "http://localhost:11434")]
         ai_url: String,
+        /// Optional: Enable interactive TUI for word review
+        #[clap(short, long)]
+        interactive: bool,
     },
     /// Generate a glossary from a YouTube video transcript
     Youtube {
@@ -40,6 +43,9 @@ pub enum Command {
         /// Optional: URL for the local AI API (defaults to http://localhost:11434)
         #[clap(long, default_value = "http://localhost:11434")]
         ai_url: String,
+        /// Optional: Enable interactive TUI for word review
+        #[clap(short, long)]
+        interactive: bool,
     },
     /// Generate a glossary from a web article
     Web {
@@ -56,6 +62,9 @@ pub enum Command {
         /// Optional: URL for the local AI API (defaults to http://localhost:11434)
         #[clap(long, default_value = "http://localhost:11434")]
         ai_url: String,
+        /// Optional: Enable interactive TUI for word review
+        #[clap(short, long)]
+        interactive: bool,
     },
     /// Manage filter list of known words
     Filter {
