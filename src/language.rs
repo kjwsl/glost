@@ -81,3 +81,24 @@ impl std::str::FromStr for Language {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_language_from_str() {
+        assert_eq!(Language::from_str("Finnish").unwrap(), Language::Finnish);
+        assert_eq!(Language::from_str("finnish").unwrap(), Language::Finnish);
+        assert_eq!(Language::from_str("Swedish").unwrap(), Language::Swedish);
+        assert!(Language::from_str("Unknown").is_err());
+    }
+
+    #[test]
+    fn test_language_to_code() {
+        assert_eq!(Language::Finnish.to_lang_code(), "fi");
+        assert_eq!(Language::Swedish.to_lang_code(), "sv");
+        assert_eq!(Language::English.to_lang_code(), "en");
+    }
+}

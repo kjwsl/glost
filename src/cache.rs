@@ -119,3 +119,57 @@ impl Cache {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+
+    #[test]
+    fn test_cache_ai_analysis() -> Result<(), Box<dyn Error + Send + Sync>> {
+        let tmp = NamedTempFile::new()?;
+        let cache = Cache::new(tmp.path().to_str().unwrap())?;
+        
+        let analysis = WordAnalysis {
+            lemma: "talo".to_string(),
+            cefr: Some("A1".to_string()),
+            grammar: Some("nominative".to_string()),
+        };
+
+        cache.insert_ai_analysis("taloa", "Tämä on taloa.", Language::Finnish, "model", &analysis)?;
+        
+        let cached = cache.get_ai_analysis("taloa", "Tämä on taloa.", Language::Finnish, "model")?;
+        assert!(cached.is_some());
+        assert_eq!(cached.unwrap().lemma, "talo");
+        
+        let missing = cache.get_ai_analysis("missing", "context", Language::Finnish, "model")?;
+        assert!(missing.is_none());
+        
+        Ok(())
+    }
+
+    #[test]
+    fn test_cache_kaikki_entries() -> Result<(), Box<dyn Error + Send + Sync>> {
+        let tmp = NamedTempFile::new()?;
+        let cache = Cache::new(tmp.path().to_str().unwrap())?;
+        
+        let entry = kaikki::Entry {
+            word: "talo".to_string(),
+            pos: "noun".to_string(),
+            lang: "Finnish".to_string(),
+            lang_code: "fi".to_string(),
+            senses: vec![],
+            categories: None,
+            head_templates: None,
+            sounds: None,
+        };
+
+        cache.insert_kaikki_entries("talo", &[entry.clone()])?;
+        
+        let cached = cache.get_kaikki_entries("talo")?;
+        assert!(cached.is_some());
+        assert_eq!(cached.unwrap()[0].word, "talo");
+        
+        Ok(())
+    }
+}

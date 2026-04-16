@@ -148,3 +148,39 @@ impl FilterList {
         result
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::NamedTempFile;
+    use std::io::Write;
+
+    #[test]
+    fn test_filter_list_basic() {
+        let mut filter = FilterList::new();
+        filter.add("talo".to_string(), Language::Finnish);
+        
+        assert!(filter.contains("talo", Language::Finnish));
+        assert!(filter.contains("TALO", Language::Finnish)); // Case insensitive
+        assert!(!filter.contains("talo", Language::English)); // Language specific
+    }
+
+    #[test]
+    fn test_filter_list_load_save() -> Result<(), std::io::Error> {
+        let mut tmp = NamedTempFile::new()?;
+        writeln!(tmp, "finnish:kissa")?;
+        writeln!(tmp, "koira")?; // Defaults to English
+        
+        let mut filter = FilterList::load(tmp.path().to_str().unwrap())?;
+        assert!(filter.contains("kissa", Language::Finnish));
+        assert!(filter.contains("koira", Language::English));
+        
+        filter.add("omena".to_string(), Language::Finnish);
+        filter.save(tmp.path().to_str().unwrap())?;
+        
+        let filter2 = FilterList::load(tmp.path().to_str().unwrap())?;
+        assert!(filter2.contains("omena", Language::Finnish));
+        
+        Ok(())
+    }
+}

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 // Top-level struct for the JSON object
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Entry {
     pub word: String,
     pub lang: String,
@@ -14,7 +14,7 @@ pub struct Entry {
 }
 
 // Struct for the "senses" array
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Sense {
     pub links: Option<Vec<Vec<String>>>,
     pub form_of: Option<Vec<FormOf>>,
@@ -25,7 +25,7 @@ pub struct Sense {
 }
 
 // Struct for the "examples" array
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Example {
     pub text: Option<String>,
     pub bold_text_offsets: Option<Vec<Vec<u32>>>,
@@ -37,13 +37,13 @@ pub struct Example {
 }
 
 // Struct for the "form_of" array
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct FormOf {
     pub word: String,
 }
 
 // Struct for the "head_templates" array
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct HeadTemplate {
     pub name: String,
     pub args: Option<HeadTemplateArgs>,
@@ -51,7 +51,7 @@ pub struct HeadTemplate {
 }
 
 // Struct for the "args" object in head_templates
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct HeadTemplateArgs {
     #[serde(rename = "1")]
     pub lang: Option<String>,
@@ -60,7 +60,7 @@ pub struct HeadTemplateArgs {
 }
 
 // Struct for the "sounds" array
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Sound {
     pub ipa: Option<String>,
     pub audio: Option<String>,
