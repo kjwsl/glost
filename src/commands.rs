@@ -123,6 +123,8 @@ async fn process_content_to_glossary(
     anki: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let word_list = get_word_list_from_content(&content);
+    let cache_path = crate::config::default_cache_file_path();
+    let cache = std::sync::Arc::new(crate::cache::Cache::new(&cache_path)?);
 
     // 1. Initial Filtering
     let filter_list = FilterList::load(&filter_file)?;
@@ -133,13 +135,13 @@ async fn process_content_to_glossary(
 
     // 2. AI Analysis (Lemmatization, CEFR, Grammar)
     let analyzed_words = if let Some(model) = ai_model {
-        run_ai_analysis(filtered_word_list, lang, &model, &ai_url).await?
+        run_ai_analysis(filtered_word_list, lang, &model, &ai_url, cache.clone()).await?
     } else {
         filtered_word_list.into_iter().map(|(w, (f, c))| (w, f, c, None, None)).collect()
     };
 
     // 3. Dictionary Lookup (Kaikki)
-    let glossary = fetch_definitions(analyzed_words, lang).await?;
+    let glossary = fetch_definitions(analyzed_words, lang, cache.clone()).await?;
     let mut entries = get_merged_entries(&glossary);
 
     // 4. Interactive TUI Review (with full analysis)
@@ -168,6 +170,7 @@ async fn run_ai_analysis(
     lang: Language,
     model: &str,
     ai_url: &str,
+    cache: std::sync::Arc<crate::cache::Cache>,
 ) -> Result<Vec<AnalyzedWord>, Box<dyn std::error::Error + Send + Sync>> {
     let total = words.len();
     println!("Analyzing {} words using AI model '{}'...", total, model);
@@ -185,11 +188,22 @@ async fn run_ai_analysis(
         let ai_url = ai_url.to_string();
         let context = context.clone();
         let pb = pb.clone();
+        let cache = cache.clone();
         ai_futures.push(tokio::spawn(async move {
             let analysis = if let Some(ctx) = &context {
-                crate::ai::analyze_word(&word, ctx, lang, &model, &ai_url)
-                    .await
-                    .ok()
+                // Check cache first
+                if let Ok(Some(cached)) = cache.get_ai_analysis(&word, ctx, lang, &model) {
+                    Some(cached)
+                } else {
+                    let result = crate::ai::analyze_word(&word, ctx, lang, &model, &ai_url)
+                        .await
+                        .ok();
+                    
+                    if let Some(ref analysis) = result {
+                        let _ = cache.insert_ai_analysis(&word, ctx, lang, &model, analysis);
+                    }
+                    result
+                }
             } else {
                 None
             };
@@ -215,6 +229,7 @@ async fn run_ai_analysis(
 async fn fetch_definitions(
     analyzed_words: Vec<AnalyzedWord>,
     lang: Language,
+    cache: std::sync::Arc<crate::cache::Cache>,
 ) -> Result<Glossary, Box<dyn std::error::Error + Send + Sync>> {
     let total = analyzed_words.len();
     println!("Fetching definitions for {} words...", total);
@@ -230,8 +245,19 @@ async fn fetch_definitions(
     for (word, frequency, context, cefr, grammar) in analyzed_words {
         let context = context.clone();
         let pb = pb.clone();
+        let cache = cache.clone();
         futures.push(tokio::spawn(async move {
-            let result = get_from_kaikki(&word).await;
+            // Check cache first
+            let result = if let Ok(Some(cached)) = cache.get_kaikki_entries(&word) {
+                Ok(cached)
+            } else {
+                let res = get_from_kaikki(&word).await;
+                if let Ok(ref entries) = res {
+                    let _ = cache.insert_kaikki_entries(&word, entries);
+                }
+                res
+            };
+            
             pb.inc(1);
             (word.clone(), frequency, context, cefr, grammar, result)
         }));

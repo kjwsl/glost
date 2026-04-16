@@ -27,3 +27,4 @@ crossterm = "0.28"
 genanki-rs = "0.4.0"
 tts = "0.26"
 indicatif = "0.17"
+rusqlite = { version = "0.25", features = ["bundled"] }

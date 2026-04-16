@@ -1085,6 +1085,7 @@ dependencies = [
  "pdf-extract",
  "ratatui",
  "reqwest",
+ "rusqlite",
  "scraper",
  "serde",
  "serde_json",
