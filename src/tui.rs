@@ -1,23 +1,23 @@
 use crate::Language;
-use crate::glossary::WordEntry;
+use crate::glossary::ExpressionEntry;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
+    Terminal,
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
-    Terminal,
 };
 use std::collections::HashSet;
 use std::io;
 
 struct App {
-    entries: Vec<WordEntry>,
+    entries: Vec<ExpressionEntry>,
     state: ListState,
     discarded: HashSet<usize>,
     known: HashSet<usize>,
@@ -25,7 +25,7 @@ struct App {
 }
 
 impl App {
-    fn new(entries: Vec<WordEntry>, lang: Language) -> App {
+    fn new(entries: Vec<ExpressionEntry>, lang: Language) -> App {
         let mut state = ListState::default();
         if !entries.is_empty() {
             state.select(Some(0));
@@ -91,9 +91,9 @@ impl App {
 }
 
 pub fn run_tui(
-    entries: Vec<WordEntry>,
+    entries: Vec<ExpressionEntry>,
     lang: Language,
-) -> Result<(Vec<WordEntry>, Vec<String>), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(Vec<ExpressionEntry>, Vec<String>), Box<dyn std::error::Error + Send + Sync>> {
     if entries.is_empty() {
         return Ok((vec![], vec![]));
     }
@@ -124,7 +124,7 @@ pub fn run_tui(
 
     for (i, entry) in app.entries.into_iter().enumerate() {
         if app.known.contains(&i) {
-            known_words.push(entry.word.clone());
+            known_words.push(entry.expression.clone());
         }
         if !app.discarded.contains(&i) {
             kept_entries.push(entry);
@@ -150,7 +150,7 @@ fn run_app<B: ratatui::backend::Backend>(
                 .constraints([Constraint::Percentage(40), Constraint::Percentage(60)].as_ref())
                 .split(chunks[0]);
 
-            // List of words
+            // List of expressions
             let items: Vec<ListItem> = app
                 .entries
                 .iter()
@@ -167,12 +167,20 @@ fn run_app<B: ratatui::backend::Backend>(
                         prefix = " [X] ".to_string();
                     }
 
-                    ListItem::new(format!("{}{} ({})", prefix, entry.word, entry.frequency)).style(style)
+                    ListItem::new(format!(
+                        "{}{} ({})",
+                        prefix, entry.expression, entry.frequency
+                    ))
+                    .style(style)
                 })
                 .collect();
 
             let list = List::new(items)
-                .block(Block::default().borders(Borders::ALL).title(format!(" Words ({}) ", app.lang)))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(format!(" Expressions ({}) ", app.lang)),
+                )
                 .highlight_style(
                     Style::default()
                         .bg(Color::Blue)
@@ -185,11 +193,19 @@ fn run_app<B: ratatui::backend::Backend>(
             // Rich preview
             let selected_idx = app.state.selected().unwrap_or(0);
             let entry = &app.entries[selected_idx];
-            
+
             let mut preview_text = vec![
                 Line::from(vec![
-                    Span::styled("Word: ", Style::default().add_modifier(Modifier::BOLD)),
-                    Span::styled(&entry.word, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        "Expression: ",
+                        Style::default().add_modifier(Modifier::BOLD),
+                    ),
+                    Span::styled(
+                        &entry.expression,
+                        Style::default()
+                            .fg(Color::Cyan)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                     Span::raw(format!(" ({})", entry.pos)),
                 ]),
                 Line::from(""),
@@ -199,7 +215,12 @@ fn run_app<B: ratatui::backend::Backend>(
             if let Some(cefr) = &entry.cefr_level {
                 preview_text.push(Line::from(vec![
                     Span::styled("CEFR: ", Style::default().add_modifier(Modifier::BOLD)),
-                    Span::styled(cefr, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                    Span::styled(
+                        cefr,
+                        Style::default()
+                            .fg(Color::Yellow)
+                            .add_modifier(Modifier::BOLD),
+                    ),
                 ]));
             }
 
@@ -212,8 +233,11 @@ fn run_app<B: ratatui::backend::Backend>(
             }
 
             preview_text.push(Line::from(""));
-            preview_text.push(Line::from(Span::styled("Meaning:", Style::default().add_modifier(Modifier::BOLD))));
-            
+            preview_text.push(Line::from(Span::styled(
+                "Meaning:",
+                Style::default().add_modifier(Modifier::BOLD),
+            )));
+
             // Format meanings (handling merged POS if present)
             if entry.meaning.contains(" | ") {
                 for part in entry.meaning.split(" | ") {
@@ -224,17 +248,29 @@ fn run_app<B: ratatui::backend::Backend>(
             }
 
             preview_text.push(Line::from(""));
-            preview_text.push(Line::from(Span::styled("Context:", Style::default().add_modifier(Modifier::BOLD))));
-            preview_text.push(Line::from(format!(" \"{}\"", entry.context.as_deref().unwrap_or("No context available."))));
+            preview_text.push(Line::from(Span::styled(
+                "Context:",
+                Style::default().add_modifier(Modifier::BOLD),
+            )));
+            preview_text.push(Line::from(format!(
+                " \"{}\"",
+                entry.context.as_deref().unwrap_or("No context available.")
+            )));
 
             let preview = Paragraph::new(preview_text)
-                .block(Block::default().borders(Borders::ALL).title(" Analysis Preview "))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title(" Analysis Preview "),
+                )
                 .wrap(Wrap { trim: true });
             f.render_widget(preview, main_chunks[1]);
 
             // Help bar
-            let help = Paragraph::new(" [Space] Toggle Keep | [t] Mark Known | [Enter] Generate | [q] Quit ")
-                .block(Block::default().borders(Borders::ALL));
+            let help = Paragraph::new(
+                " [Space] Toggle Keep | [t] Mark Known | [Enter] Generate | [q] Quit ",
+            )
+            .block(Block::default().borders(Borders::ALL));
             f.render_widget(help, chunks[1]);
         })?;
 

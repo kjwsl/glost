@@ -25,9 +25,7 @@ pub fn generate_audio_file(
         if !voice.is_empty() {
             cmd.arg("-v").arg(voice);
         }
-        cmd.arg(word)
-            .arg("-o")
-            .arg(&output_path);
+        cmd.arg(word).arg("-o").arg(&output_path);
 
         let status = cmd.status()?;
         if !status.success() {

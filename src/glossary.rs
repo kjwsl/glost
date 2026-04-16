@@ -1,11 +1,11 @@
 use crate::{Language, kaikki};
 use std::{collections::HashSet, str::FromStr};
 
-pub type Glossary = HashSet<WordEntry>;
+pub type Glossary = HashSet<ExpressionEntry>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct WordEntry {
-    pub word: String,
+pub struct ExpressionEntry {
+    pub expression: String,
     pub meaning: String,
     pub pos: POS,
     pub lang: Language,
@@ -16,9 +16,9 @@ pub struct WordEntry {
     pub audio_path: Option<String>,
 }
 
-impl WordEntry {
+impl ExpressionEntry {
     pub fn new(
-        word: String,
+        expression: String,
         meaning: String,
         pos: POS,
         lang: Language,
@@ -26,7 +26,7 @@ impl WordEntry {
         context: Option<String>,
     ) -> Self {
         Self {
-            word,
+            expression,
             meaning,
             pos,
             lang,
@@ -59,7 +59,7 @@ impl WordEntry {
             .join("; ");
 
         Some(Self {
-            word: entry.word,
+            expression: entry.word, // Kaikki still uses 'word'
             meaning,
             pos,
             lang,
@@ -71,13 +71,13 @@ impl WordEntry {
         })
     }
 
-    /// Get a key for merging entries (word + lang, excluding POS, frequency and meaning)
+    /// Get a key for merging entries (expression + lang, excluding POS, frequency and meaning)
     pub fn merge_key(&self) -> (String, Language) {
-        (self.word.clone(), self.lang)
+        (self.expression.clone(), self.lang)
     }
 
     /// Merge this entry with another, combining frequencies and meanings from different POS
-    pub fn merge_with(&mut self, other: &WordEntry) {
+    pub fn merge_with(&mut self, other: &ExpressionEntry) {
         self.frequency += other.frequency;
 
         // Keep the context if we don't have one
@@ -185,8 +185,8 @@ impl std::fmt::Display for POS {
     }
 }
 
-pub fn get_merged_entries(glossary: &Glossary) -> Vec<WordEntry> {
-    let mut merged_entries: std::collections::HashMap<(String, Language), WordEntry> =
+pub fn get_merged_entries(glossary: &Glossary) -> Vec<ExpressionEntry> {
+    let mut merged_entries: std::collections::HashMap<(String, Language), ExpressionEntry> =
         std::collections::HashMap::new();
 
     for entry in glossary {
@@ -202,17 +202,17 @@ pub fn get_merged_entries(glossary: &Glossary) -> Vec<WordEntry> {
     }
 
     // Convert back to vector and sort by frequency
-    let mut glossary_vec: Vec<WordEntry> = merged_entries.into_values().collect();
+    let mut glossary_vec: Vec<ExpressionEntry> = merged_entries.into_values().collect();
     glossary_vec.sort_by(|a, b| b.frequency.cmp(&a.frequency));
     glossary_vec
 }
 
-pub fn generate_markdown(merged_entries: &[WordEntry]) -> String {
+pub fn generate_markdown(merged_entries: &[ExpressionEntry]) -> String {
     let mut markdown = String::new();
     markdown.push_str("# Glossary\n\n");
 
     for entry in merged_entries {
-        markdown.push_str(&format!("### {} ({})\n", entry.word, entry.frequency));
+        markdown.push_str(&format!("### {} ({})\n", entry.expression, entry.frequency));
 
         // Handle merged meanings with different POS
         if entry.meaning.contains(" | ") {
@@ -253,7 +253,7 @@ mod tests {
 
     #[test]
     fn test_word_entry_merge() {
-        let mut entry1 = WordEntry::new(
+        let mut entry1 = ExpressionEntry::new(
             "talo".to_string(),
             "house".to_string(),
             POS::Noun,
@@ -261,7 +261,7 @@ mod tests {
             1,
             Some("Tämä on talo.".to_string()),
         );
-        let entry2 = WordEntry::new(
+        let entry2 = ExpressionEntry::new(
             "talo".to_string(),
             "building".to_string(),
             POS::Noun,
@@ -279,7 +279,7 @@ mod tests {
     #[test]
     fn test_generate_markdown_with_context() {
         let mut glossary = Glossary::new();
-        glossary.insert(WordEntry::new(
+        glossary.insert(ExpressionEntry::new(
             "talo".to_string(),
             "house".to_string(),
             POS::Noun,

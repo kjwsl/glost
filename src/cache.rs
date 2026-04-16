@@ -1,7 +1,7 @@
 use crate::Language;
-use crate::ai::WordAnalysis;
+use crate::ai::ExpressionAnalysis;
 use crate::kaikki;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::error::Error;
 use std::sync::Mutex;
 
@@ -16,7 +16,7 @@ impl Cache {
         // Initialize tables
         conn.execute(
             "CREATE TABLE IF NOT EXISTS ai_cache (
-                word TEXT,
+                expression TEXT,
                 context TEXT,
                 lang TEXT,
                 model TEXT,
@@ -24,38 +24,40 @@ impl Cache {
                 meaning TEXT,
                 cefr TEXT,
                 grammar TEXT,
-                PRIMARY KEY (word, context, lang, model)
+                PRIMARY KEY (expression, context, lang, model)
             )",
             [],
         )?;
 
         conn.execute(
             "CREATE TABLE IF NOT EXISTS kaikki_cache (
-                word TEXT PRIMARY KEY,
+                expression TEXT PRIMARY KEY,
                 json_data TEXT
             )",
             [],
         )?;
 
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
     pub fn get_ai_analysis(
         &self,
-        word: &str,
+        expression: &str,
         context: &str,
         lang: Language,
         model: &str,
-    ) -> Result<Option<WordAnalysis>, Box<dyn Error + Send + Sync>> {
+    ) -> Result<Option<ExpressionAnalysis>, Box<dyn Error + Send + Sync>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT lemma, meaning, cefr, grammar FROM ai_cache WHERE word = ? AND context = ? AND lang = ? AND model = ?"
+            "SELECT lemma, meaning, cefr, grammar FROM ai_cache WHERE expression = ? AND context = ? AND lang = ? AND model = ?"
         )?;
-        
-        let mut rows = stmt.query(params![word, context, lang.to_string(), model])?;
+
+        let mut rows = stmt.query(params![expression, context, lang.to_string(), model])?;
 
         if let Some(row) = rows.next()? {
-            Ok(Some(WordAnalysis {
+            Ok(Some(ExpressionAnalysis {
                 lemma: row.get(0)?,
                 meaning: row.get(1)?,
                 cefr: row.get(2)?,
@@ -68,17 +70,17 @@ impl Cache {
 
     pub fn insert_ai_analysis(
         &self,
-        word: &str,
+        expression: &str,
         context: &str,
         lang: Language,
         model: &str,
-        analysis: &WordAnalysis,
+        analysis: &ExpressionAnalysis,
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT OR REPLACE INTO ai_cache (word, context, lang, model, lemma, meaning, cefr, grammar) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO ai_cache (expression, context, lang, model, lemma, meaning, cefr, grammar) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             params![
-                word,
+                expression,
                 context,
                 lang.to_string(),
                 model,
@@ -93,11 +95,11 @@ impl Cache {
 
     pub fn get_kaikki_entries(
         &self,
-        word: &str,
+        expression: &str,
     ) -> Result<Option<Vec<kaikki::Entry>>, Box<dyn Error + Send + Sync>> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare("SELECT json_data FROM kaikki_cache WHERE word = ?")?;
-        let mut rows = stmt.query(params![word])?;
+        let mut stmt = conn.prepare("SELECT json_data FROM kaikki_cache WHERE expression = ?")?;
+        let mut rows = stmt.query(params![expression])?;
 
         if let Some(row) = rows.next()? {
             let json_data: String = row.get(0)?;
@@ -110,14 +112,16 @@ impl Cache {
 
     pub fn insert_kaikki_entries(
         &self,
-        word: &str,
+        expression: &str,
         entries: &[kaikki::Entry],
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let conn = self.conn.lock().unwrap();
-        let json_data = serde_json::from_str::<serde_json::Value>(&serde_json::to_string(entries)?)?.to_string();
+        let json_data =
+            serde_json::from_str::<serde_json::Value>(&serde_json::to_string(entries)?)?
+                .to_string();
         conn.execute(
-            "INSERT OR REPLACE INTO kaikki_cache (word, json_data) VALUES (?, ?)",
-            params![word, json_data],
+            "INSERT OR REPLACE INTO kaikki_cache (expression, json_data) VALUES (?, ?)",
+            params![expression, json_data],
         )?;
         Ok(())
     }
@@ -132,23 +136,30 @@ mod tests {
     fn test_cache_ai_analysis() -> Result<(), Box<dyn Error + Send + Sync>> {
         let tmp = NamedTempFile::new()?;
         let cache = Cache::new(tmp.path().to_str().unwrap())?;
-        
-        let analysis = WordAnalysis {
+
+        let analysis = ExpressionAnalysis {
             lemma: "talo".to_string(),
             meaning: "house".to_string(),
             cefr: Some("A1".to_string()),
             grammar: Some("nominative".to_string()),
         };
 
-        cache.insert_ai_analysis("taloa", "Tämä on taloa.", Language::Finnish, "model", &analysis)?;
-        
-        let cached = cache.get_ai_analysis("taloa", "Tämä on taloa.", Language::Finnish, "model")?;
+        cache.insert_ai_analysis(
+            "taloa",
+            "Tämä on taloa.",
+            Language::Finnish,
+            "model",
+            &analysis,
+        )?;
+
+        let cached =
+            cache.get_ai_analysis("taloa", "Tämä on taloa.", Language::Finnish, "model")?;
         assert!(cached.is_some());
         assert_eq!(cached.unwrap().lemma, "talo");
-        
+
         let missing = cache.get_ai_analysis("missing", "context", Language::Finnish, "model")?;
         assert!(missing.is_none());
-        
+
         Ok(())
     }
 
@@ -156,7 +167,7 @@ mod tests {
     fn test_cache_kaikki_entries() -> Result<(), Box<dyn Error + Send + Sync>> {
         let tmp = NamedTempFile::new()?;
         let cache = Cache::new(tmp.path().to_str().unwrap())?;
-        
+
         let entry = kaikki::Entry {
             word: "talo".to_string(),
             pos: "noun".to_string(),
@@ -169,11 +180,11 @@ mod tests {
         };
 
         cache.insert_kaikki_entries("talo", &[entry.clone()])?;
-        
+
         let cached = cache.get_kaikki_entries("talo")?;
         assert!(cached.is_some());
         assert_eq!(cached.unwrap()[0].word, "talo");
-        
+
         Ok(())
     }
 }
