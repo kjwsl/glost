@@ -210,10 +210,11 @@ async fn run_ai_analysis(
             
             pb.inc(1);
             let lemma = analysis.as_ref().map(|a| a.lemma.to_lowercase()).unwrap_or(word.clone());
+            let meaning = analysis.as_ref().map(|a| a.meaning.clone());
             let cefr = analysis.as_ref().and_then(|a| a.cefr.clone());
             let grammar = analysis.as_ref().and_then(|a| a.grammar.clone());
             
-            (lemma, frequency, context, cefr, grammar)
+            (lemma, frequency, context, cefr, grammar, meaning)
         }));
     }
 
@@ -225,6 +226,8 @@ async fn run_ai_analysis(
     pb.finish_with_message("Analysis complete");
     Ok(results)
 }
+
+type AnalyzedWord = (String, usize, Option<String>, Option<String>, Option<String>, Option<String>);
 
 async fn fetch_definitions(
     analyzed_words: Vec<AnalyzedWord>,
@@ -242,7 +245,7 @@ async fn fetch_definitions(
     let mut glossary = Glossary::new();
     let mut futures = FuturesUnordered::new();
 
-    for (word, frequency, context, cefr, grammar) in analyzed_words {
+    for (word, frequency, context, cefr, grammar, ai_meaning) in analyzed_words {
         let context = context.clone();
         let pb = pb.clone();
         let cache = cache.clone();
@@ -259,18 +262,21 @@ async fn fetch_definitions(
             };
             
             pb.inc(1);
-            (word.clone(), frequency, context, cefr, grammar, result)
+            (word.clone(), frequency, context, cefr, grammar, ai_meaning, result)
         }));
     }
 
     while let Some(result) = futures.next().await {
         match result {
-            Ok((_word, frequency, context, cefr, grammar, Ok(entries))) => {
+            Ok((_word, frequency, context, cefr, grammar, ai_meaning, Ok(entries))) => {
                 for entry in entries {
                     if entry.lang_code.to_lowercase() == lang.to_lang_code()
-                        && let Some(word_entry) =
+                        && let Some(mut word_entry) =
                             WordEntry::from_kaikki_entry(entry, frequency, context.clone(), grammar.clone(), cefr.clone())
                     {
+                        if let Some(meaning) = ai_meaning.clone() {
+                             word_entry.meaning = format!("{} (AI: {})", word_entry.meaning, meaning);
+                        }
                         glossary.insert(word_entry);
                     }
                 }

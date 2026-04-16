@@ -18,6 +18,7 @@ struct OllamaResponse {
 #[derive(Deserialize)]
 pub struct WordAnalysis {
     pub lemma: String,
+    pub meaning: String,
     pub cefr: Option<String>,
     pub grammar: Option<String>,
 }
@@ -32,12 +33,23 @@ pub async fn analyze_word(
     let client = reqwest::Client::new();
     
     let prompt = format!(
-        "Analyze the {} word '{}' found in this sentence: '{}'. \
-        Return its dictionary form (lemma), its estimated CEFR difficulty level (A1-C2), \
-        and a brief grammar explanation (especially the grammatical case or tense if applicable in the context). \
-        Respond with only a JSON object containing 'lemma', 'cefr', and 'grammar' fields. \
-        Example: {{ \"lemma\": \"talo\", \"cefr\": \"A1\", \"grammar\": \"inessive singular ('in the house')\" }}",
-        lang, word, context
+        "Act as an expert linguist specializing in {lang} and English. \
+        Analyze the word '{word}' as it appears in this context: '{context}'.
+
+        Your task:
+        1. Identify the dictionary form (lemma) of the word.
+        2. Provide a concise English translation (meaning) that is exactly appropriate for THIS specific context. Do not list multiple meanings; pick the most accurate one.
+        3. Estimate the CEFR difficulty level (A1-C2).
+        4. Provide a brief grammar note (e.g., case, tense, mood) explaining the word's form in this sentence.
+
+        Respond ONLY with a JSON object in this format:
+        {{
+            \"lemma\": \"...\",
+            \"meaning\": \"...\",
+            \"cefr\": \"...\",
+            \"grammar\": \"...\"
+        }}",
+        lang = lang, word = word, context = context
     );
 
     let request = OllamaRequest {
