@@ -21,3 +21,4 @@ url = "2.5"
 yt_transcript_fetcher = { path = "./yt_transcript_fetcher" }
 aho-corasick = "1.1.4"
 unicode-segmentation = "1.13.2"
+scraper = "0.22.0"

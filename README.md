@@ -4,7 +4,8 @@ A command-line tool for generating glossaries from ebooks and documents, with la
 
 ## Features
 
-- **Multi-format Support**: Extract text from EPUB, PDF, and TXT files
+- **Multi-format Support**: Extract text from EPUB, PDF, SRT, VTT, and TXT files
+- **Web Article Support**: Fetch and process content directly from URLs
 - **Dictionary Integration**: Look up word definitions using the Kaikki.org API
 - **AI-Powered Lemmatization**: Use local AI (via Ollama) to find dictionary forms of inflected words (crucial for languages like Finnish)
 - **Context Sentences**: Automatically extracts and includes the sentence where each word was found
@@ -26,12 +27,17 @@ cargo build --release
 # Basic usage
 glost generate book.epub
 
-# Specify language and output file
-glost generate --lang Finnish --output finnish_glossary.md book.epub
+# Specify language and output file (supports .epub, .pdf, .srt, .vtt, .txt)
+glost generate --lang Finnish --output finnish_glossary.md movie.srt
 
 # Use local AI (Ollama) for lemmatization and better accuracy
 # Ensure Ollama is running (e.g., 'ollama run llama3.2')
 glost generate --ai-model llama3.2 book.epub
+```
+
+### Generate a Glossary from a Web Article
+```bash
+glost web https://yle.fi/uutiset/osasto/selkouutiset/ --lang Finnish --ai-model llama3.2
 ```
 
 ### Generate a Glossary from a YouTube Video

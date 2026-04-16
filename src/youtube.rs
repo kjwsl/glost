@@ -1,11 +1,10 @@
 use std::error::Error;
-use std::sync::LazyLock;
 
-use aho_corasick::AhoCorasick;
 use url::Url;
 use yt_transcript_fetcher::fetch_transcript;
 
 use crate::Language;
+use crate::content::clean_subtitle_text;
 
 pub async fn get_youtube_transcript(
     video_url: &str,
@@ -47,31 +46,6 @@ fn extract_video_id(url: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
         _ => Err("Not a valid YouTube URL".into()),
     }
 }
-
-static SUBTITLE_PAIRS: &[(&str, &str)] = &[
-    ("<c>", ""),
-    ("</c>", ""),
-    ("<i>", ""),
-    ("</i>", ""),
-    ("<b>", ""),
-    ("</b>", ""),
-    ("<u>", ""),
-    ("</u>", ""),
-    ("&amp;", "&"),
-    ("&lt;", "<"),
-    ("&gt;", ">"),
-    ("&quot;", "\""),
-    ("&#39;", "'"),
-    ("<v ", ""),
-    (">", " "),
-];
-
-static SUBTITLE_CLEANER: LazyLock<(AhoCorasick, Vec<&'static str>)> = LazyLock::new(|| {
-    let patterns: Vec<&str> = SUBTITLE_PAIRS.iter().map(|(p, _)| *p).collect();
-    let replacements: Vec<&str> = SUBTITLE_PAIRS.iter().map(|(_, r)| *r).collect();
-    let ac = AhoCorasick::new(patterns).expect("Failed to build AhoCorasick automaton");
-    (ac, replacements)
-});
 
 pub fn extract_text_from_vtt(vtt_content: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
     let mut transcript = String::new();
@@ -116,12 +90,6 @@ pub fn extract_text_from_vtt(vtt_content: &str) -> Result<String, Box<dyn Error 
     } else {
         Ok(transcript.trim().to_string())
     }
-}
-
-fn clean_subtitle_text(text: &str) -> String {
-    // Remove HTML tags, clean up subtitle text, and remove VTT formatting
-    let (ac, replacements) = &*SUBTITLE_CLEANER;
-    ac.replace_all(text, replacements).trim().to_string()
 }
 
 #[cfg(test)]

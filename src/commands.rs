@@ -31,6 +31,14 @@ pub async fn handle_command(
             ai_model,
             ai_url,
         } => handle_youtube(video_url, lang, output, filter, ai_model, ai_url).await,
+        Command::Web {
+            url,
+            lang,
+            output,
+            filter,
+            ai_model,
+            ai_url,
+        } => handle_web(url, lang, output, filter, ai_model, ai_url).await,
         Command::Filter { action } => handle_filter_action(action).await,
     }
 }
@@ -49,6 +57,29 @@ async fn handle_generate(
     }
 
     let content = get_content_from_file(file_path).await?;
+    process_content_to_glossary(content, lang, output, filter_file, ai_model, ai_url).await
+}
+
+async fn handle_web(
+    url: String,
+    lang: Language,
+    output: String,
+    filter_file: String,
+    ai_model: Option<String>,
+    ai_url: String,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    println!("Fetching content from URL: {}...", url);
+    let client = reqwest::Client::new();
+    let res = client.get(&url).send().await?;
+    
+    if !res.status().is_success() {
+        return Err(format!("Failed to fetch URL: {}", res.status()).into());
+    }
+
+    let html = res.text().await?;
+    let content = crate::content::extract_text_from_html(&html)?;
+    println!("Content fetched successfully!");
+
     process_content_to_glossary(content, lang, output, filter_file, ai_model, ai_url).await
 }
 
