@@ -134,10 +134,10 @@ async fn process_content_to_glossary(
         .collect();
 
     // 2. AI Analysis (Lemmatization, CEFR, Grammar)
-    let analyzed_words = if let Some(model) = ai_model {
+    let analyzed_words: Vec<AnalyzedWord> = if let Some(model) = ai_model {
         run_ai_analysis(filtered_word_list, lang, &model, &ai_url, cache.clone()).await?
     } else {
-        filtered_word_list.into_iter().map(|(w, (f, c))| (w, f, c, None, None)).collect()
+        filtered_word_list.into_iter().map(|(w, (f, c))| (w, f, c, None, None, None)).collect()
     };
 
     // 3. Dictionary Lookup (Kaikki)
@@ -163,7 +163,7 @@ async fn process_content_to_glossary(
     generate_outputs_from_entries(entries, lang, output, anki).await
 }
 
-type AnalyzedWord = (String, usize, Option<String>, Option<String>, Option<String>);
+type AnalyzedWord = (String, usize, Option<String>, Option<String>, Option<String>, Option<String>);
 
 async fn run_ai_analysis(
     words: Vec<(String, (usize, Option<String>))>,
@@ -227,8 +227,6 @@ async fn run_ai_analysis(
     Ok(results)
 }
 
-type AnalyzedWord = (String, usize, Option<String>, Option<String>, Option<String>, Option<String>);
-
 async fn fetch_definitions(
     analyzed_words: Vec<AnalyzedWord>,
     lang: Language,
@@ -281,7 +279,7 @@ async fn fetch_definitions(
                     }
                 }
             }
-            Ok((word, _, _, _, _, Err(e))) => pb.suspend(|| eprintln!("Failed to get entry for \"{}\": {}", word, e)),
+            Ok((word, _, _, _, _, _, Err(e))) => pb.suspend(|| eprintln!("Failed to get entry for \"{}\": {}", word, e)),
             Err(e) => pb.suspend(|| eprintln!("Task failed: {}", e)),
         }
     }

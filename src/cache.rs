@@ -21,6 +21,7 @@ impl Cache {
                 lang TEXT,
                 model TEXT,
                 lemma TEXT,
+                meaning TEXT,
                 cefr TEXT,
                 grammar TEXT,
                 PRIMARY KEY (word, context, lang, model)
@@ -48,7 +49,7 @@ impl Cache {
     ) -> Result<Option<WordAnalysis>, Box<dyn Error + Send + Sync>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT lemma, cefr, grammar FROM ai_cache WHERE word = ? AND context = ? AND lang = ? AND model = ?"
+            "SELECT lemma, meaning, cefr, grammar FROM ai_cache WHERE word = ? AND context = ? AND lang = ? AND model = ?"
         )?;
         
         let mut rows = stmt.query(params![word, context, lang.to_string(), model])?;
@@ -56,8 +57,9 @@ impl Cache {
         if let Some(row) = rows.next()? {
             Ok(Some(WordAnalysis {
                 lemma: row.get(0)?,
-                cefr: row.get(1)?,
-                grammar: row.get(2)?,
+                meaning: row.get(1)?,
+                cefr: row.get(2)?,
+                grammar: row.get(3)?,
             }))
         } else {
             Ok(None)
@@ -74,13 +76,14 @@ impl Cache {
     ) -> Result<(), Box<dyn Error + Send + Sync>> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT OR REPLACE INTO ai_cache (word, context, lang, model, lemma, cefr, grammar) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO ai_cache (word, context, lang, model, lemma, meaning, cefr, grammar) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 word,
                 context,
                 lang.to_string(),
                 model,
                 analysis.lemma,
+                analysis.meaning,
                 analysis.cefr,
                 analysis.grammar
             ],
@@ -132,6 +135,7 @@ mod tests {
         
         let analysis = WordAnalysis {
             lemma: "talo".to_string(),
+            meaning: "house".to_string(),
             cefr: Some("A1".to_string()),
             grammar: Some("nominative".to_string()),
         };
