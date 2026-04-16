@@ -146,11 +146,11 @@ async fn process_content_to_glossary(
         filtered_word_list = kept_words;
     }
 
-    // If AI is enabled, lemmatize the words
+    let mut analysis_results: Vec<(String, usize, Option<String>, Option<String>, Option<String>)> = Vec::new();
+
+    // If AI is enabled, analyze the words
     if let Some(model) = ai_model {
-        println!("Lemmatizing words using AI model '{}'...", model);
-        let mut lemmatized_word_list: std::collections::HashMap<String, (usize, Option<String>)> =
-            std::collections::HashMap::new();
+        println!("Analyzing words using AI model '{}'...", model);
         let mut ai_futures = FuturesUnordered::new();
 
         for (word, (frequency, context)) in filtered_word_list {
@@ -158,59 +158,75 @@ async fn process_content_to_glossary(
             let ai_url = ai_url.clone();
             let context = context.clone();
             ai_futures.push(tokio::spawn(async move {
-                let lemma = if let Some(ctx) = &context {
-                    crate::ai::lemmatize_word(&word, ctx, lang, &model, &ai_url)
+                let analysis = if let Some(ctx) = &context {
+                    crate::ai::analyze_word(&word, ctx, lang, &model, &ai_url)
                         .await
-                        .unwrap_or(word.clone())
+                        .ok()
                 } else {
-                    word.clone()
+                    None
                 };
-                (lemma, frequency, context)
+                
+                let lemma = analysis.as_ref().map(|a| a.lemma.to_lowercase()).unwrap_or(word.clone());
+                let cefr = analysis.as_ref().and_then(|a| a.cefr.clone());
+                let grammar = analysis.as_ref().and_then(|a| a.grammar.clone());
+                
+                (lemma, frequency, context, cefr, grammar)
             }));
         }
 
         while let Some(result) = ai_futures.next().await {
-            if let Ok((lemma, frequency, context)) = result {
-                let entry = lemmatized_word_list
-                    .entry(lemma)
-                    .or_insert((0, context.clone()));
-                entry.0 += frequency;
-                if entry.1.is_none() {
-                    entry.1 = context;
-                }
+            if let Ok(data) = result {
+                analysis_results.push(data);
             }
         }
-        filtered_word_list = lemmatized_word_list.into_iter().collect();
+    } else {
+        analysis_results = filtered_word_list.into_iter().map(|(w, (f, c))| (w, f, c, None, None)).collect();
     }
 
     let mut glossary = Glossary::new();
     let mut futures = FuturesUnordered::new();
 
-    for (word, (frequency, context)) in filtered_word_list {
+    for (word, frequency, context, cefr, grammar) in analysis_results {
         let context = context.clone();
         futures.push(tokio::spawn(async move {
-            (word.clone(), frequency, context, get_from_kaikki(&word).await)
+            (word.clone(), frequency, context, cefr, grammar, get_from_kaikki(&word).await)
         }));
     }
 
     while let Some(result) = futures.next().await {
         match result {
-            Ok((_word, frequency, context, Ok(entries))) => {
+            Ok((_word, frequency, context, cefr, grammar, Ok(entries))) => {
                 for entry in entries {
                     if entry.lang_code.to_lowercase() == lang.to_lang_code()
-                        && let Some(word_entry) =
+                        && let Some(mut word_entry) =
                             WordEntry::from_kaikki_entry(entry, frequency, context.clone())
                     {
+                        word_entry.cefr_level = cefr.clone();
+                        word_entry.grammar_note = grammar.clone();
                         glossary.insert(word_entry);
                     }
                 }
             }
-            Ok((word, _, _, Err(e))) => eprintln!("Failed to get entry for \"{}\": {}", word, e),
+            Ok((word, _, _, _, _, Err(e))) => eprintln!("Failed to get entry for \"{}\": {}", word, e),
             Err(e) => eprintln!("Task failed: {}", e),
         }
     }
 
-    let merged_entries = crate::glossary::get_merged_entries(&glossary);
+    let mut merged_entries = crate::glossary::get_merged_entries(&glossary);
+
+    // Generate audio if Anki is enabled
+    if anki.is_some() {
+        println!("Generating audio for Anki deck...");
+        let temp_dir = std::env::temp_dir().join("glost_audio");
+        let _ = std::fs::remove_dir_all(&temp_dir); // Clear old audio
+        std::fs::create_dir_all(&temp_dir)?;
+        
+        for entry in &mut merged_entries {
+            if let Ok(filename) = crate::audio::generate_audio_file(&entry.word, lang, &temp_dir) {
+                entry.audio_path = Some(temp_dir.join(filename).to_str().unwrap().to_string());
+            }
+        }
+    }
 
     if let Some(anki_path) = anki {
         println!("Generating Anki deck in {}...", anki_path);

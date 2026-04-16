@@ -11,6 +11,9 @@ pub struct WordEntry {
     pub lang: Language,
     pub frequency: usize,
     pub context: Option<String>,
+    pub grammar_note: Option<String>,
+    pub cefr_level: Option<String>,
+    pub audio_path: Option<String>,
 }
 
 impl WordEntry {
@@ -29,6 +32,9 @@ impl WordEntry {
             lang,
             frequency,
             context,
+            grammar_note: None,
+            cefr_level: None,
+            audio_path: None,
         }
     }
 
@@ -57,6 +63,9 @@ impl WordEntry {
             lang,
             frequency,
             context,
+            grammar_note: None,
+            cefr_level: None,
+            audio_path: None,
         })
     }
 
@@ -72,6 +81,17 @@ impl WordEntry {
         // Keep the context if we don't have one
         if self.context.is_none() {
             self.context = other.context.clone();
+        }
+
+        // Keep grammar and CEFR if we don't have them
+        if self.grammar_note.is_none() {
+            self.grammar_note = other.grammar_note.clone();
+        }
+        if self.cefr_level.is_none() {
+            self.cefr_level = other.cefr_level.clone();
+        }
+        if self.audio_path.is_none() {
+            self.audio_path = other.audio_path.clone();
         }
 
         // If this is the first merge (meaning is in original format), convert it

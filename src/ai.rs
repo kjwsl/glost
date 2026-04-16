@@ -16,23 +16,27 @@ struct OllamaResponse {
 }
 
 #[derive(Deserialize)]
-struct LemmaOutput {
-    lemma: String,
+pub struct WordAnalysis {
+    pub lemma: String,
+    pub cefr: Option<String>,
+    pub grammar: Option<String>,
 }
 
-pub async fn lemmatize_word(
+pub async fn analyze_word(
     word: &str,
     context: &str,
     lang: Language,
     model: &str,
     url: &str,
-) -> Result<String, Box<dyn Error + Send + Sync>> {
+) -> Result<WordAnalysis, Box<dyn Error + Send + Sync>> {
     let client = reqwest::Client::new();
     
     let prompt = format!(
-        "Return the dictionary form (lemma) of the {} word '{}' found in this sentence: '{}'. \
-        Respond with only a JSON object containing the field 'lemma'. \
-        Example: {{ \"lemma\": \"talo\" }}",
+        "Analyze the {} word '{}' found in this sentence: '{}'. \
+        Return its dictionary form (lemma), its estimated CEFR difficulty level (A1-C2), \
+        and a brief grammar explanation (especially the grammatical case or tense if applicable in the context). \
+        Respond with only a JSON object containing 'lemma', 'cefr', and 'grammar' fields. \
+        Example: {{ \"lemma\": \"talo\", \"cefr\": \"A1\", \"grammar\": \"inessive singular ('in the house')\" }}",
         lang, word, context
     );
 
@@ -54,9 +58,20 @@ pub async fn lemmatize_word(
     }
 
     let ollama_res: OllamaResponse = res.json().await?;
-    let lemma_output: LemmaOutput = serde_json::from_str(&ollama_res.response)?;
+    let analysis: WordAnalysis = serde_json::from_str(&ollama_res.response)?;
 
-    Ok(lemma_output.lemma.to_lowercase())
+    Ok(analysis)
+}
+
+pub async fn lemmatize_word(
+    word: &str,
+    context: &str,
+    lang: Language,
+    model: &str,
+    url: &str,
+) -> Result<String, Box<dyn Error + Send + Sync>> {
+    let analysis = analyze_word(word, context, lang, model, url).await?;
+    Ok(analysis.lemma.to_lowercase())
 }
 
 #[cfg(test)]
