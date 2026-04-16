@@ -1,4 +1,5 @@
 use crate::Language;
+use crate::glossary::WordEntry;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
@@ -8,6 +9,7 @@ use ratatui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Wrap},
     Terminal,
 };
@@ -15,7 +17,7 @@ use std::collections::HashSet;
 use std::io;
 
 struct App {
-    words: Vec<(String, (usize, Option<String>))>,
+    entries: Vec<WordEntry>,
     state: ListState,
     discarded: HashSet<usize>,
     known: HashSet<usize>,
@@ -23,15 +25,13 @@ struct App {
 }
 
 impl App {
-    fn new(mut words: Vec<(String, (usize, Option<String>))>, lang: Language) -> App {
-        // Sort by frequency descending for the TUI
-        words.sort_by(|a, b| b.1 .0.cmp(&a.1 .0));
+    fn new(entries: Vec<WordEntry>, lang: Language) -> App {
         let mut state = ListState::default();
-        if !words.is_empty() {
+        if !entries.is_empty() {
             state.select(Some(0));
         }
         App {
-            words,
+            entries,
             state,
             discarded: HashSet::new(),
             known: HashSet::new(),
@@ -42,7 +42,7 @@ impl App {
     fn next(&mut self) {
         let i = match self.state.selected() {
             Some(i) => {
-                if i >= self.words.len() - 1 {
+                if i >= self.entries.len() - 1 {
                     0
                 } else {
                     i + 1
@@ -57,7 +57,7 @@ impl App {
         let i = match self.state.selected() {
             Some(i) => {
                 if i == 0 {
-                    self.words.len() - 1
+                    self.entries.len() - 1
                 } else {
                     i - 1
                 }
@@ -91,10 +91,10 @@ impl App {
 }
 
 pub fn run_tui(
-    words: Vec<(String, (usize, Option<String>))>,
+    entries: Vec<WordEntry>,
     lang: Language,
-) -> Result<(Vec<(String, (usize, Option<String>))>, Vec<String>), Box<dyn std::error::Error + Send + Sync>> {
-    if words.is_empty() {
+) -> Result<(Vec<WordEntry>, Vec<String>), Box<dyn std::error::Error + Send + Sync>> {
+    if entries.is_empty() {
         return Ok((vec![], vec![]));
     }
 
@@ -104,7 +104,7 @@ pub fn run_tui(
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = App::new(words, lang);
+    let mut app = App::new(entries, lang);
     let res = run_app(&mut terminal, &mut app);
 
     disable_raw_mode()?;
@@ -119,19 +119,19 @@ pub fn run_tui(
         return Err(Box::new(err));
     }
 
-    let mut kept_words = Vec::new();
+    let mut kept_entries = Vec::new();
     let mut known_words = Vec::new();
 
-    for (i, word_data) in app.words.into_iter().enumerate() {
+    for (i, entry) in app.entries.into_iter().enumerate() {
         if app.known.contains(&i) {
-            known_words.push(word_data.0.clone());
+            known_words.push(entry.word.clone());
         }
         if !app.discarded.contains(&i) {
-            kept_words.push(word_data);
+            kept_entries.push(entry);
         }
     }
 
-    Ok((kept_words, known_words))
+    Ok((kept_entries, known_words))
 }
 
 fn run_app<B: ratatui::backend::Backend>(
@@ -152,10 +152,10 @@ fn run_app<B: ratatui::backend::Backend>(
 
             // List of words
             let items: Vec<ListItem> = app
-                .words
+                .entries
                 .iter()
                 .enumerate()
-                .map(|(i, (word, (freq, _)))| {
+                .map(|(i, entry)| {
                     let mut style = Style::default();
                     let mut prefix = " [ ] ".to_string();
 
@@ -167,7 +167,7 @@ fn run_app<B: ratatui::backend::Backend>(
                         prefix = " [X] ".to_string();
                     }
 
-                    ListItem::new(format!("{}{} ({})", prefix, word, freq)).style(style)
+                    ListItem::new(format!("{}{} ({})", prefix, entry.word, entry.frequency)).style(style)
                 })
                 .collect();
 
@@ -182,13 +182,53 @@ fn run_app<B: ratatui::backend::Backend>(
 
             f.render_stateful_widget(list, main_chunks[0], &mut app.state);
 
-            // Context preview
-            let selected_word_idx = app.state.selected().unwrap_or(0);
-            let context = app.words[selected_word_idx].1 .1.as_deref().unwrap_or("No context available.");
-            let word = &app.words[selected_word_idx].0;
+            // Rich preview
+            let selected_idx = app.state.selected().unwrap_or(0);
+            let entry = &app.entries[selected_idx];
+            
+            let mut preview_text = vec![
+                Line::from(vec![
+                    Span::styled("Word: ", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::styled(&entry.word, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                    Span::raw(format!(" ({})", entry.pos)),
+                ]),
+                Line::from(""),
+            ];
 
-            let preview = Paragraph::new(format!("Word: {}\n\nContext:\n\n{}", word, context))
-                .block(Block::default().borders(Borders::ALL).title(" Preview "))
+            // CEFR Level Tag
+            if let Some(cefr) = &entry.cefr_level {
+                preview_text.push(Line::from(vec![
+                    Span::styled("CEFR: ", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::styled(cefr, Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+                ]));
+            }
+
+            // Grammar Note
+            if let Some(grammar) = &entry.grammar_note {
+                preview_text.push(Line::from(vec![
+                    Span::styled("Grammar: ", Style::default().add_modifier(Modifier::BOLD)),
+                    Span::styled(grammar, Style::default().fg(Color::Green)),
+                ]));
+            }
+
+            preview_text.push(Line::from(""));
+            preview_text.push(Line::from(Span::styled("Meaning:", Style::default().add_modifier(Modifier::BOLD))));
+            
+            // Format meanings (handling merged POS if present)
+            if entry.meaning.contains(" | ") {
+                for part in entry.meaning.split(" | ") {
+                    preview_text.push(Line::from(format!(" • {}", part.replace("*", ""))));
+                }
+            } else {
+                preview_text.push(Line::from(format!(" • {}", entry.meaning.replace("*", ""))));
+            }
+
+            preview_text.push(Line::from(""));
+            preview_text.push(Line::from(Span::styled("Context:", Style::default().add_modifier(Modifier::BOLD))));
+            preview_text.push(Line::from(format!(" \"{}\"", entry.context.as_deref().unwrap_or("No context available."))));
+
+            let preview = Paragraph::new(preview_text)
+                .block(Block::default().borders(Borders::ALL).title(" Analysis Preview "))
                 .wrap(Wrap { trim: true });
             f.render_widget(preview, main_chunks[1]);
 
