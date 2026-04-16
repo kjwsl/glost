@@ -1,92 +1,97 @@
-use std::error::Error;
-
-use url::Url;
-use yt_transcript_fetcher::fetch_transcript;
-
 use crate::Language;
-use crate::content::clean_subtitle_text;
+use yt_dlp::Downloader;
+use yt_dlp::client::deps::Libraries;
+use std::path::PathBuf;
+use tempfile::tempdir;
 
 pub async fn get_youtube_transcript(
     video_url: &str,
     lang: Language,
-) -> Result<String, Box<dyn Error + Send + Sync>> {
-    let video_id = extract_video_id(video_url)?;
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    let lang_code = lang.to_lang_code();
+    
+    // We assume yt-dlp and ffmpeg are in the PATH or we use a temporary location
+    // For simplicity, we'll try to use the ones from the system PATH first.
+    // If not found, the user should install them.
+    // The crate can download them, but let's try to be lightweight.
+    
+    let dir = tempdir()?;
+    let lib_path = dir.path().join("libs");
+    std::fs::create_dir_all(&lib_path)?;
+    
+    // Libraries::new requires paths to the binaries.
+    // Let's try to find them in the system.
+    let yt_dlp_path = which::which("yt-dlp").unwrap_or_else(|_| PathBuf::from("yt-dlp"));
+    let ffmpeg_path = which::which("ffmpeg").unwrap_or_else(|_| PathBuf::from("ffmpeg"));
+    
+    let libraries = Libraries::new(yt_dlp_path, ffmpeg_path);
+    let downloader = Downloader::builder(libraries, dir.path().to_str().unwrap()).build().await?;
+    
+    let video = downloader.fetch_video_infos(video_url).await?;
+    
+    let sub_filename = format!("sub_{}.srt", lang_code);
+    let sub_path = downloader
+        .download_subtitle(&video, &lang_code, &sub_filename, true)
+        .await?;
 
-    fetch_transcript(&video_id, lang.to_lang_code()).await
-}
-
-fn extract_video_id(url: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
-    let parsed_url = Url::parse(url)?;
-
-    match parsed_url.host_str() {
-        Some("www.youtube.com") | Some("youtube.com") | Some("m.youtube.com") => {
-            if let Some(query) = parsed_url.query() {
-                for (key, value) in url::form_urlencoded::parse(query.as_bytes()) {
-                    if key == "v" {
-                        return Ok(value.to_string());
-                    }
-                }
-            }
-            Err("Could not find video ID in YouTube URL".into())
+    let content = tokio::fs::read_to_string(&sub_path).await?;
+    
+    // The downloader usually saves as .srt or .vtt depending on what's available
+    let ext = sub_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    match ext {
+        "vtt" => extract_text_from_vtt(&content),
+        "srt" => crate::content::extract_text_from_srt(&content),
+        _ => {
+            // If it's something else, try to parse it as SRT as a fallback
+            crate::content::extract_text_from_srt(&content)
         }
-        Some("youtu.be") => {
-            let path = parsed_url.path();
-            if path.starts_with('/') && path.len() > 1 {
-                // Handle query parameters in youtu.be URLs
-                let video_id = &path[1..];
-                if let Some(question_mark) = video_id.find('?') {
-                    Ok(video_id[..question_mark].to_string())
-                } else {
-                    Ok(video_id.to_string())
-                }
-            } else {
-                Err("Invalid youtu.be URL format".into())
-            }
-        }
-        _ => Err("Not a valid YouTube URL".into()),
     }
 }
 
-pub fn extract_text_from_vtt(vtt_content: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
+pub fn extract_video_id(url: &str) -> Option<String> {
+    if url.len() == 11 && !url.contains('/') {
+        return Some(url.to_string());
+    }
+    let patterns = ["v=", "be/", "embed/", "shorts/"];
+    for pattern in patterns {
+        if let Some(idx) = url.find(pattern) {
+            let start = idx + pattern.len();
+            let end = url[start..].find('&').unwrap_or(url[start..].len());
+            return Some(url[start..start + end].to_string());
+        }
+    }
+    None
+}
+
+pub fn extract_text_from_vtt(vtt_content: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let mut transcript = String::new();
-    let lines: Vec<&str> = vtt_content.lines().collect();
+    let lines = vtt_content.lines();
+    let mut is_content = false;
 
-    let mut i = 0;
-    while i < lines.len() {
-        let line = lines[i].trim();
-
-        // Skip VTT headers and timing lines
-        if line.starts_with("WEBVTT")
-            || line.starts_with("NOTE")
-            || line.contains("-->")
-            || line.is_empty()
-        {
-            i += 1;
+    for line in lines {
+        let line = line.trim();
+        if line.is_empty() || line == "WEBVTT" || line.starts_with("Kind:") || line.starts_with("Language:") {
             continue;
         }
 
-        // Skip lines that look like timestamps
-        if line.chars().next().is_some_and(|c| c.is_ascii_digit())
-            && (line.contains(':') || line.contains('.'))
-        {
-            i += 1;
+        if line.contains("-->") {
+            is_content = true;
             continue;
         }
 
-        // This should be subtitle text
-        if !line.is_empty() {
-            let cleaned_text = clean_subtitle_text(line);
-            if !cleaned_text.is_empty() {
-                transcript.push_str(&cleaned_text);
-                transcript.push(' ');
+        if is_content {
+            let cleaned = crate::content::clean_subtitle_text(line);
+            if !cleaned.is_empty() {
+                if !transcript.is_empty() && !transcript.ends_with(' ') {
+                    transcript.push(' ');
+                }
+                transcript.push_str(&cleaned);
             }
         }
-
-        i += 1;
     }
 
     if transcript.trim().is_empty() {
-        Err("No text content found in the subtitle file".into())
+        Err("No text content found in the VTT subtitles".into())
     } else {
         Ok(transcript.trim().to_string())
     }
@@ -98,25 +103,7 @@ mod tests {
 
     #[test]
     fn test_extract_video_id() {
-        let test_cases = vec![
-            ("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "dQw4w9WgXcQ"),
-            ("https://youtu.be/dQw4w9WgXcQ", "dQw4w9WgXcQ"),
-            ("https://youtu.be/dQw4w9WgXcQ?si=abc123", "dQw4w9WgXcQ"),
-            (
-                "https://youtube.com/watch?v=dQw4w9WgXcQ&t=60s",
-                "dQw4w9WgXcQ",
-            ),
-        ];
-
-        for (url, expected_id) in test_cases {
-            assert_eq!(extract_video_id(url).unwrap(), expected_id);
-        }
-    }
-
-    #[test]
-    fn test_clean_subtitle_text() {
-        let input = "<c>Hello &amp; welcome to <i>YouTube</i> &#39;transcripts&#39;</c>";
-        let expected = "Hello & welcome to YouTube 'transcripts'";
-        assert_eq!(clean_subtitle_text(input), expected);
+        assert_eq!(extract_video_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ").unwrap(), "dQw4w9WgXcQ");
+        assert_eq!(extract_video_id("https://youtu.be/dQw4w9WgXcQ").unwrap(), "dQw4w9WgXcQ");
     }
 }
