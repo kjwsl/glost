@@ -57,16 +57,62 @@ pub async fn get_content_from_pdf(
     Ok(out)
 }
 
-pub fn get_word_list_from_content(text: &str) -> HashMap<String, usize> {
-    let mut word_list = HashMap::new();
-    for word in text.split_whitespace() {
-        if is_word(word) {
-            *word_list.entry(word.to_string()).or_insert(0) += 1;
+use unicode_segmentation::UnicodeSegmentation;
+
+pub fn get_word_list_from_content(text: &str) -> HashMap<String, (usize, Option<String>)> {
+    let mut word_list: HashMap<String, (usize, Option<String>)> = HashMap::new();
+
+    for sentence in text.unicode_sentences() {
+        let cleaned_sentence = sentence.trim().replace('\n', " ");
+        if cleaned_sentence.is_empty() {
+            continue;
+        }
+
+        for word in cleaned_sentence.split_word_bounds() {
+            if is_word(word) {
+                let word_lower = word.to_lowercase();
+                let entry = word_list.entry(word_lower).or_insert((0, None));
+                entry.0 += 1;
+                // Store the first sentence we encounter as the context
+                if entry.1.is_none() {
+                    entry.1 = Some(cleaned_sentence.clone());
+                }
+            }
         }
     }
     word_list
 }
 
 fn is_word(word: &str) -> bool {
-    word.chars().all(char::is_alphabetic)
+    !word.is_empty() && word.chars().all(char::is_alphabetic)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_get_word_list_from_content() {
+        let text = "This is a sentence. This is another one!";
+        let word_list = get_word_list_from_content(text);
+
+        assert_eq!(word_list.get("this").unwrap().0, 2);
+        assert_eq!(word_list.get("sentence").unwrap().0, 1);
+        assert_eq!(
+            word_list.get("this").unwrap().1,
+            Some("This is a sentence.".to_string())
+        );
+        assert_eq!(
+            word_list.get("another").unwrap().1,
+            Some("This is another one!".to_string())
+        );
+    }
+
+    #[test]
+    fn test_is_word() {
+        assert!(is_word("hello"));
+        assert!(!is_word("hello123"));
+        assert!(!is_word(""));
+        assert!(!is_word("!"));
+    }
 }

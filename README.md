@@ -1,13 +1,16 @@
 # Glost - Glossary Generator
 
-A command-line tool for generating glossaries from ebooks and documents, with language-specific filtering capabilities.
+A command-line tool for generating glossaries from ebooks and documents, with language-specific filtering capabilities and AI-powered lemmatization.
 
 ## Features
 
 - **Multi-format Support**: Extract text from EPUB, PDF, and TXT files
 - **Dictionary Integration**: Look up word definitions using the Kaikki.org API
+- **AI-Powered Lemmatization**: Use local AI (via Ollama) to find dictionary forms of inflected words (crucial for languages like Finnish)
+- **Context Sentences**: Automatically extracts and includes the sentence where each word was found
+- **Frequency Sorting**: Glossaries are sorted by word frequency in the source text
 - **Language-Specific Filtering**: Maintain separate filter lists for different languages
-- **Markdown Output**: Generate glossaries in markdown format
+- **Markdown Output**: Generate rich glossaries in markdown format with context blockquotes
 
 ## Installation
 
@@ -24,16 +27,16 @@ cargo build --release
 glost generate book.epub
 
 # Specify language and output file
-glost generate --lang Swedish --output swedish_glossary.md book.epub
+glost generate --lang Finnish --output finnish_glossary.md book.epub
 
-# Use custom filter file
-glost generate --filter my_filters.txt book.epub
+# Use local AI (Ollama) for lemmatization and better accuracy
+# Ensure Ollama is running (e.g., 'ollama run llama3.2')
+glost generate --ai-model llama3.2 book.epub
 ```
 
 ### Generate a Glossary from a YouTube Video
 ```bash
-export YOUTUBE_API_KEY=<your_api_key>
-glost youtube <video_uri>
+glost youtube https://www.youtube.com/watch?v=dQw4w9WgXcQ --lang English --ai-model llama3.2
 ```
 
 ### Manage Filter Lists
@@ -87,6 +90,7 @@ Swedish:det
 - Afrikaans
 - Dutch
 - English
+- Finnish
 - French
 - German
 - Italian
@@ -101,10 +105,11 @@ Swedish:det
 ## Code Structure
 
 - `src/main.rs` - Entry point
+- `src/ai.rs` - Local AI integration (Ollama)
 - `src/cli.rs` - Command-line interface definitions
 - `src/commands.rs` - Command handlers
-- `src/content.rs` - File content extraction
+- `src/content.rs` - File content extraction and sentence segmentation
 - `src/filter.rs` - Filter list management
-- `src/glossary.rs` - Glossary generation and output
+- `src/glossary.rs` - Glossary generation and markdown formatting
 - `src/kaikki/` - Kaikki.org API integration
 - `src/language.rs` - Language definitions and utilities

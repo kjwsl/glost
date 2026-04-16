@@ -13,6 +13,7 @@ pub enum Language {
     Russian,
     Spanish,
     Swedish,
+    Finnish,
 }
 
 impl Language {
@@ -31,6 +32,7 @@ impl Language {
             Language::Russian => "ru",
             Language::Spanish => "es",
             Language::Swedish => "sv",
+            Language::Finnish => "fi",
         }
     }
 }
@@ -51,6 +53,7 @@ impl std::fmt::Display for Language {
             Language::Russian => "Russian",
             Language::Spanish => "Spanish",
             Language::Swedish => "Swedish",
+            Language::Finnish => "Finnish",
         };
         write!(f, "{}", s)
     }
@@ -73,6 +76,7 @@ impl std::str::FromStr for Language {
             "russian" => Ok(Language::Russian),
             "spanish" => Ok(Language::Spanish),
             "swedish" => Ok(Language::Swedish),
+            "finnish" => Ok(Language::Finnish),
             _ => Err(std::fmt::Error),
         }
     }

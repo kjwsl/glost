@@ -18,6 +18,12 @@ pub enum Command {
         output: String,
         #[clap(short, long, default_value_t = default_filter_file_path())]
         filter: String,
+        /// Optional: Local AI model (e.g., 'llama3.2') for lemmatization and context extraction
+        #[clap(long)]
+        ai_model: Option<String>,
+        /// Optional: URL for the local AI API (defaults to http://localhost:11434)
+        #[clap(long, default_value = "http://localhost:11434")]
+        ai_url: String,
     },
     /// Generate a glossary from a YouTube video transcript
     Youtube {
@@ -28,6 +34,12 @@ pub enum Command {
         output: String,
         #[clap(short, long, default_value_t = default_filter_file_path())]
         filter: String,
+        /// Optional: Local AI model (e.g., 'llama3.2') for lemmatization and context extraction
+        #[clap(long)]
+        ai_model: Option<String>,
+        /// Optional: URL for the local AI API (defaults to http://localhost:11434)
+        #[clap(long, default_value = "http://localhost:11434")]
+        ai_url: String,
     },
     /// Manage filter list of known words
     Filter {

@@ -10,20 +10,33 @@ pub struct WordEntry {
     pub pos: POS,
     pub lang: Language,
     pub frequency: usize,
+    pub context: Option<String>,
 }
 
 impl WordEntry {
-    pub fn new(word: String, meaning: String, pos: POS, lang: Language, frequency: usize) -> Self {
+    pub fn new(
+        word: String,
+        meaning: String,
+        pos: POS,
+        lang: Language,
+        frequency: usize,
+        context: Option<String>,
+    ) -> Self {
         Self {
             word,
             meaning,
             pos,
             lang,
             frequency,
+            context,
         }
     }
 
-    pub fn from_kaikki_entry(entry: kaikki::Entry, frequency: usize) -> Option<Self> {
+    pub fn from_kaikki_entry(
+        entry: kaikki::Entry,
+        frequency: usize,
+        context: Option<String>,
+    ) -> Option<Self> {
         let pos = POS::from_str(&entry.pos).unwrap();
         let lang = Language::from_str(&entry.lang).ok()?;
 
@@ -43,6 +56,7 @@ impl WordEntry {
             pos,
             lang,
             frequency,
+            context,
         })
     }
 
@@ -54,6 +68,11 @@ impl WordEntry {
     /// Merge this entry with another, combining frequencies and meanings from different POS
     pub fn merge_with(&mut self, other: &WordEntry) {
         self.frequency += other.frequency;
+
+        // Keep the context if we don't have one
+        if self.context.is_none() {
+            self.context = other.context.clone();
+        }
 
         // If this is the first merge (meaning is in original format), convert it
         if !self.meaning.contains(" | ") {
@@ -188,6 +207,11 @@ pub fn generate_markdown(glossary: &Glossary) -> String {
                 markdown.push_str(&format!("- *{}*: {}\n", entry.pos, entry.meaning));
             }
         }
+
+        if let Some(context) = &entry.context {
+            markdown.push_str(&format!("\n> *\"{}\"*\n", context));
+        }
+
         markdown.push('\n');
     }
 
@@ -196,4 +220,52 @@ pub fn generate_markdown(glossary: &Glossary) -> String {
 
 pub fn write_glossary_to_file(markdown: &str, file_path: &str) -> Result<(), std::io::Error> {
     std::fs::write(file_path, markdown)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_word_entry_merge() {
+        let mut entry1 = WordEntry::new(
+            "talo".to_string(),
+            "house".to_string(),
+            POS::Noun,
+            Language::Finnish,
+            1,
+            Some("Tämä on talo.".to_string()),
+        );
+        let entry2 = WordEntry::new(
+            "talo".to_string(),
+            "building".to_string(),
+            POS::Noun,
+            Language::Finnish,
+            2,
+            None,
+        );
+
+        entry1.merge_with(&entry2);
+
+        assert_eq!(entry1.frequency, 3);
+        assert_eq!(entry1.context, Some("Tämä on talo.".to_string()));
+    }
+
+    #[test]
+    fn test_generate_markdown_with_context() {
+        let mut glossary = Glossary::new();
+        glossary.insert(WordEntry::new(
+            "talo".to_string(),
+            "house".to_string(),
+            POS::Noun,
+            Language::Finnish,
+            1,
+            Some("Tämä on talo.".to_string()),
+        ));
+
+        let markdown = generate_markdown(&glossary);
+        assert!(markdown.contains("### talo (1)"));
+        assert!(markdown.contains("- *noun*: house"));
+        assert!(markdown.contains("> *\"Tämä on talo.\"*"));
+    }
 }

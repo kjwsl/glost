@@ -20,3 +20,4 @@ futures = "0.3"
 url = "2.5"
 yt_transcript_fetcher = { path = "./yt_transcript_fetcher" }
 aho-corasick = "1.1.4"
+unicode-segmentation = "1.13.2"
