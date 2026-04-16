@@ -27,6 +27,9 @@ pub enum Command {
         /// Optional: Enable interactive TUI for word review
         #[clap(short, long)]
         interactive: bool,
+        /// Optional: Export glossary to an Anki .apkg file
+        #[clap(short, long)]
+        anki: Option<String>,
     },
     /// Generate a glossary from a YouTube video transcript
     Youtube {
@@ -46,6 +49,9 @@ pub enum Command {
         /// Optional: Enable interactive TUI for word review
         #[clap(short, long)]
         interactive: bool,
+        /// Optional: Export glossary to an Anki .apkg file
+        #[clap(short, long)]
+        anki: Option<String>,
     },
     /// Generate a glossary from a web article
     Web {
@@ -65,6 +71,9 @@ pub enum Command {
         /// Optional: Enable interactive TUI for word review
         #[clap(short, long)]
         interactive: bool,
+        /// Optional: Export glossary to an Anki .apkg file
+        #[clap(short, long)]
+        anki: Option<String>,
     },
     /// Manage filter list of known words
     Filter {

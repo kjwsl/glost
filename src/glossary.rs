@@ -163,7 +163,7 @@ impl std::fmt::Display for POS {
     }
 }
 
-pub fn generate_markdown(glossary: &Glossary) -> String {
+pub fn get_merged_entries(glossary: &Glossary) -> Vec<WordEntry> {
     let mut merged_entries: std::collections::HashMap<(String, Language), WordEntry> =
         std::collections::HashMap::new();
 
@@ -182,11 +182,14 @@ pub fn generate_markdown(glossary: &Glossary) -> String {
     // Convert back to vector and sort by frequency
     let mut glossary_vec: Vec<WordEntry> = merged_entries.into_values().collect();
     glossary_vec.sort_by(|a, b| b.frequency.cmp(&a.frequency));
+    glossary_vec
+}
 
+pub fn generate_markdown(merged_entries: &[WordEntry]) -> String {
     let mut markdown = String::new();
     markdown.push_str("# Glossary\n\n");
 
-    for entry in glossary_vec {
+    for entry in merged_entries {
         markdown.push_str(&format!("### {} ({})\n", entry.word, entry.frequency));
 
         // Handle merged meanings with different POS
@@ -263,7 +266,8 @@ mod tests {
             Some("Tämä on talo.".to_string()),
         ));
 
-        let markdown = generate_markdown(&glossary);
+        let merged = get_merged_entries(&glossary);
+        let markdown = generate_markdown(&merged);
         assert!(markdown.contains("### talo (1)"));
         assert!(markdown.contains("- *noun*: house"));
         assert!(markdown.contains("> *\"Tämä on talo.\"*"));

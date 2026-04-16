@@ -1,4 +1,5 @@
 pub mod ai;
+pub mod anki;
 pub mod cli;
 pub mod commands;
 pub mod config;

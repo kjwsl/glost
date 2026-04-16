@@ -23,7 +23,8 @@ pub async fn handle_command(
             ai_model,
             ai_url,
             interactive,
-        } => handle_generate(file_path, lang, output, filter, ai_model, ai_url, interactive).await,
+            anki,
+        } => handle_generate(file_path, lang, output, filter, ai_model, ai_url, interactive, anki).await,
         Command::Youtube {
             video_url,
             lang,
@@ -32,7 +33,8 @@ pub async fn handle_command(
             ai_model,
             ai_url,
             interactive,
-        } => handle_youtube(video_url, lang, output, filter, ai_model, ai_url, interactive).await,
+            anki,
+        } => handle_youtube(video_url, lang, output, filter, ai_model, ai_url, interactive, anki).await,
         Command::Web {
             url,
             lang,
@@ -41,7 +43,8 @@ pub async fn handle_command(
             ai_model,
             ai_url,
             interactive,
-        } => handle_web(url, lang, output, filter, ai_model, ai_url, interactive).await,
+            anki,
+        } => handle_web(url, lang, output, filter, ai_model, ai_url, interactive, anki).await,
         Command::Filter { action } => handle_filter_action(action).await,
     }
 }
@@ -54,6 +57,7 @@ async fn handle_generate(
     ai_model: Option<String>,
     ai_url: String,
     interactive: bool,
+    anki: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let file_path = PathBuf::from(file_path);
     if !file_path.exists() {
@@ -61,7 +65,7 @@ async fn handle_generate(
     }
 
     let content = get_content_from_file(file_path).await?;
-    process_content_to_glossary(content, lang, output, filter_file, ai_model, ai_url, interactive).await
+    process_content_to_glossary(content, lang, output, filter_file, ai_model, ai_url, interactive, anki).await
 }
 
 async fn handle_web(
@@ -72,6 +76,7 @@ async fn handle_web(
     ai_model: Option<String>,
     ai_url: String,
     interactive: bool,
+    anki: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("Fetching content from URL: {}...", url);
     let client = reqwest::Client::new();
@@ -85,7 +90,7 @@ async fn handle_web(
     let content = crate::content::extract_text_from_html(&html)?;
     println!("Content fetched successfully!");
 
-    process_content_to_glossary(content, lang, output, filter_file, ai_model, ai_url, interactive).await
+    process_content_to_glossary(content, lang, output, filter_file, ai_model, ai_url, interactive, anki).await
 }
 
 async fn handle_youtube(
@@ -96,12 +101,13 @@ async fn handle_youtube(
     ai_model: Option<String>,
     ai_url: String,
     interactive: bool,
+    anki: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("Fetching transcript from YouTube video...");
     let content = get_youtube_transcript(&video_url, lang).await?;
     println!("Transcript fetched successfully!");
 
-    process_content_to_glossary(content, lang, output, filter_file, ai_model, ai_url, interactive).await
+    process_content_to_glossary(content, lang, output, filter_file, ai_model, ai_url, interactive, anki).await
 }
 
 async fn process_content_to_glossary(
@@ -112,6 +118,7 @@ async fn process_content_to_glossary(
     ai_model: Option<String>,
     ai_url: String,
     interactive: bool,
+    anki: Option<String>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let word_list = get_word_list_from_content(&content);
 
@@ -203,12 +210,19 @@ async fn process_content_to_glossary(
         }
     }
 
-    let markdown = generate_markdown(&glossary);
+    let merged_entries = crate::glossary::get_merged_entries(&glossary);
+
+    if let Some(anki_path) = anki {
+        println!("Generating Anki deck in {}...", anki_path);
+        crate::anki::generate_anki_deck(&merged_entries, "Glost Deck", &anki_path)?;
+    }
+
+    let markdown = generate_markdown(&merged_entries);
     write_glossary_to_file(&markdown, &output)?;
 
     println!(
-        "Generated glossary with {} entries in {}",
-        glossary.len(),
+        "Generated glossary with {} merged entries in {}",
+        merged_entries.len(),
         output
     );
     Ok(())
