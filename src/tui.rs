@@ -1,5 +1,6 @@
 use crate::Language;
 use crate::glossary::ExpressionEntry;
+use anyhow::Result;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
@@ -93,7 +94,7 @@ impl App {
 pub fn run_tui(
     entries: Vec<ExpressionEntry>,
     lang: Language,
-) -> Result<(Vec<ExpressionEntry>, Vec<String>), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<(Vec<ExpressionEntry>, Vec<String>)> {
     if entries.is_empty() {
         return Ok((vec![], vec![]));
     }
@@ -105,7 +106,7 @@ pub fn run_tui(
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = App::new(entries, lang);
-    let res = run_app(&mut terminal, &mut app);
+    let _ = run_app(&mut terminal, &mut app)?;
 
     disable_raw_mode()?;
     execute!(
@@ -114,10 +115,6 @@ pub fn run_tui(
         DisableMouseCapture
     )?;
     terminal.show_cursor()?;
-
-    if let Err(err) = res {
-        return Err(Box::new(err));
-    }
 
     let mut kept_entries = Vec::new();
     let mut known_words = Vec::new();
@@ -134,145 +131,144 @@ pub fn run_tui(
     Ok((kept_entries, known_words))
 }
 
-fn run_app<B: ratatui::backend::Backend>(
-    terminal: &mut Terminal<B>,
-    app: &mut App,
-) -> io::Result<()> {
+fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut App) -> Result<()> {
     loop {
-        terminal.draw(|f| {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Min(3), Constraint::Length(3)].as_ref())
-                .split(f.area());
+        terminal
+            .draw(|f| {
+                let chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([Constraint::Min(3), Constraint::Length(3)].as_ref())
+                    .split(f.area());
 
-            let main_chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(40), Constraint::Percentage(60)].as_ref())
-                .split(chunks[0]);
+                let main_chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Percentage(40), Constraint::Percentage(60)].as_ref())
+                    .split(chunks[0]);
 
-            // List of expressions
-            let items: Vec<ListItem> = app
-                .entries
-                .iter()
-                .enumerate()
-                .map(|(i, entry)| {
-                    let mut style = Style::default();
-                    let mut prefix = " [ ] ".to_string();
+                // List of expressions
+                let items: Vec<ListItem> = app
+                    .entries
+                    .iter()
+                    .enumerate()
+                    .map(|(i, entry)| {
+                        let mut style = Style::default();
+                        let mut prefix = " [ ] ".to_string();
 
-                    if app.known.contains(&i) {
-                        style = style.fg(Color::Green);
-                        prefix = " [K] ".to_string();
-                    } else if app.discarded.contains(&i) {
-                        style = style.fg(Color::Red);
-                        prefix = " [X] ".to_string();
-                    }
+                        if app.known.contains(&i) {
+                            style = style.fg(Color::Green);
+                            prefix = " [K] ".to_string();
+                        } else if app.discarded.contains(&i) {
+                            style = style.fg(Color::Red);
+                            prefix = " [X] ".to_string();
+                        }
 
-                    ListItem::new(format!(
-                        "{}{} ({})",
-                        prefix, entry.expression, entry.frequency
-                    ))
-                    .style(style)
-                })
-                .collect();
+                        ListItem::new(format!(
+                            "{}{} ({})",
+                            prefix, entry.expression, entry.frequency
+                        ))
+                        .style(style)
+                    })
+                    .collect();
 
-            let list = List::new(items)
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(format!(" Expressions ({}) ", app.lang)),
-                )
-                .highlight_style(
-                    Style::default()
-                        .bg(Color::Blue)
-                        .add_modifier(Modifier::BOLD),
-                )
-                .highlight_symbol(">> ");
-
-            f.render_stateful_widget(list, main_chunks[0], &mut app.state);
-
-            // Rich preview
-            let selected_idx = app.state.selected().unwrap_or(0);
-            let entry = &app.entries[selected_idx];
-
-            let mut preview_text = vec![
-                Line::from(vec![
-                    Span::styled(
-                        "Expression: ",
-                        Style::default().add_modifier(Modifier::BOLD),
-                    ),
-                    Span::styled(
-                        &entry.expression,
+                let list = List::new(items)
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(format!(" Expressions ({}) ", app.lang)),
+                    )
+                    .highlight_style(
                         Style::default()
-                            .fg(Color::Cyan)
+                            .bg(Color::Blue)
                             .add_modifier(Modifier::BOLD),
-                    ),
-                    Span::raw(format!(" ({})", entry.pos)),
-                ]),
-                Line::from(""),
-            ];
+                    )
+                    .highlight_symbol(">> ");
 
-            // CEFR Level Tag
-            if let Some(cefr) = &entry.cefr_level {
-                preview_text.push(Line::from(vec![
-                    Span::styled("CEFR: ", Style::default().add_modifier(Modifier::BOLD)),
-                    Span::styled(
-                        cefr,
-                        Style::default()
-                            .fg(Color::Yellow)
-                            .add_modifier(Modifier::BOLD),
-                    ),
-                ]));
-            }
+                f.render_stateful_widget(list, main_chunks[0], &mut app.state);
 
-            // Grammar Note
-            if let Some(grammar) = &entry.grammar_note {
-                preview_text.push(Line::from(vec![
-                    Span::styled("Grammar: ", Style::default().add_modifier(Modifier::BOLD)),
-                    Span::styled(grammar, Style::default().fg(Color::Green)),
-                ]));
-            }
+                // Rich preview
+                let selected_idx = app.state.selected().unwrap_or(0);
+                let entry = &app.entries[selected_idx];
 
-            preview_text.push(Line::from(""));
-            preview_text.push(Line::from(Span::styled(
-                "Meaning:",
-                Style::default().add_modifier(Modifier::BOLD),
-            )));
+                let mut preview_text = vec![
+                    Line::from(vec![
+                        Span::styled(
+                            "Expression: ",
+                            Style::default().add_modifier(Modifier::BOLD),
+                        ),
+                        Span::styled(
+                            &entry.expression,
+                            Style::default()
+                                .fg(Color::Cyan)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                        Span::raw(format!(" ({})", entry.pos)),
+                    ]),
+                    Line::from(""),
+                ];
 
-            // Format meanings (handling merged POS if present)
-            if entry.meaning.contains(" | ") {
-                for part in entry.meaning.split(" | ") {
-                    preview_text.push(Line::from(format!(" • {}", part.replace("*", ""))));
+                // CEFR Level Tag
+                if let Some(cefr) = &entry.cefr_level {
+                    preview_text.push(Line::from(vec![
+                        Span::styled("CEFR: ", Style::default().add_modifier(Modifier::BOLD)),
+                        Span::styled(
+                            cefr,
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD),
+                        ),
+                    ]));
                 }
-            } else {
-                preview_text.push(Line::from(format!(" • {}", entry.meaning.replace("*", ""))));
-            }
 
-            preview_text.push(Line::from(""));
-            preview_text.push(Line::from(Span::styled(
-                "Context:",
-                Style::default().add_modifier(Modifier::BOLD),
-            )));
-            preview_text.push(Line::from(format!(
-                " \"{}\"",
-                entry.context.as_deref().unwrap_or("No context available.")
-            )));
+                // Grammar Note
+                if let Some(grammar) = &entry.grammar_note {
+                    preview_text.push(Line::from(vec![
+                        Span::styled("Grammar: ", Style::default().add_modifier(Modifier::BOLD)),
+                        Span::styled(grammar, Style::default().fg(Color::Green)),
+                    ]));
+                }
 
-            let preview = Paragraph::new(preview_text)
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(" Analysis Preview "),
+                preview_text.push(Line::from(""));
+                preview_text.push(Line::from(Span::styled(
+                    "Meaning:",
+                    Style::default().add_modifier(Modifier::BOLD),
+                )));
+
+                // Format meanings (handling merged POS if present)
+                if entry.meaning.contains(" | ") {
+                    for part in entry.meaning.split(" | ") {
+                        preview_text.push(Line::from(format!(" • {}", part.replace("*", ""))));
+                    }
+                } else {
+                    preview_text.push(Line::from(format!(" • {}", entry.meaning.replace("*", ""))));
+                }
+
+                preview_text.push(Line::from(""));
+                preview_text.push(Line::from(Span::styled(
+                    "Context:",
+                    Style::default().add_modifier(Modifier::BOLD),
+                )));
+                preview_text.push(Line::from(format!(
+                    " \"{}\"",
+                    entry.context.as_deref().unwrap_or("No context available.")
+                )));
+
+                let preview = Paragraph::new(preview_text)
+                    .block(
+                        Block::default()
+                            .borders(Borders::ALL)
+                            .title(" Analysis Preview "),
+                    )
+                    .wrap(Wrap { trim: true });
+                f.render_widget(preview, main_chunks[1]);
+
+                // Help bar
+                let help = Paragraph::new(
+                    " [Space] Toggle Keep | [t] Mark Known | [Enter] Generate | [q] Quit ",
                 )
-                .wrap(Wrap { trim: true });
-            f.render_widget(preview, main_chunks[1]);
-
-            // Help bar
-            let help = Paragraph::new(
-                " [Space] Toggle Keep | [t] Mark Known | [Enter] Generate | [q] Quit ",
-            )
-            .block(Block::default().borders(Borders::ALL));
-            f.render_widget(help, chunks[1]);
-        })?;
+                .block(Block::default().borders(Borders::ALL));
+                f.render_widget(help, chunks[1]);
+            })
+            .map_err(|_| anyhow::anyhow!("Failed to render TUI"))?;
 
         if let Event::Key(key) = event::read()? {
             match key.code {
