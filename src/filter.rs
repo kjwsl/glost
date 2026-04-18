@@ -51,7 +51,9 @@ impl FilterList {
                     }
                 }
 
-                Ok(Self { expressions_by_language })
+                Ok(Self {
+                    expressions_by_language,
+                })
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::new()),
             Err(e) => Err(e),
@@ -63,7 +65,8 @@ impl FilterList {
 
         // Add header comment
         lines.push(
-            "# Filter list - Format: language:expression or just expression (defaults to English)".to_string(),
+            "# Filter list - Format: language:expression or just expression (defaults to English)"
+                .to_string(),
         );
         lines.push("".to_string());
 

@@ -238,7 +238,6 @@ pub fn get_expression_list_from_content(text: &str) -> HashMap<String, (usize, O
     expression_list
 }
 
-
 fn is_word(word: &str) -> bool {
     !word.is_empty() && word.chars().all(char::is_alphabetic)
 }
@@ -263,7 +262,6 @@ mod tests {
             Some("This is another one!".to_string())
         );
     }
-
 
     #[test]
     fn test_is_word() {

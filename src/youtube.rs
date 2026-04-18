@@ -1,50 +1,84 @@
 use crate::Language;
-use yt_dlp::Downloader;
-use yt_dlp::client::deps::Libraries;
 use std::path::PathBuf;
-use tempfile::tempdir;
+use std::process::Command as StdCommand;
+use tokio::fs;
+use tokio::process::Command;
 
 pub async fn get_youtube_transcript(
     video_url: &str,
     lang: Language,
 ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    check_yt_dlp_installed()?;
+
     let lang_code = lang.to_lang_code();
-    
-    // We assume yt-dlp and ffmpeg are in the PATH or we use a temporary location
-    // For simplicity, we'll try to use the ones from the system PATH first.
-    // If not found, the user should install them.
-    // The crate can download them, but let's try to be lightweight.
-    
-    let dir = tempdir()?;
-    let lib_path = dir.path().join("libs");
-    std::fs::create_dir_all(&lib_path)?;
-    
-    // Libraries::new requires paths to the binaries.
-    // Let's try to find them in the system.
-    let yt_dlp_path = which::which("yt-dlp").unwrap_or_else(|_| PathBuf::from("yt-dlp"));
-    let ffmpeg_path = which::which("ffmpeg").unwrap_or_else(|_| PathBuf::from("ffmpeg"));
-    
-    let libraries = Libraries::new(yt_dlp_path, ffmpeg_path);
-    let downloader = Downloader::builder(libraries, dir.path().to_str().unwrap()).build().await?;
-    
-    let video = downloader.fetch_video_infos(video_url).await?;
-    
-    let sub_filename = format!("sub_{}.srt", lang_code);
-    let sub_path = downloader
-        .download_subtitle(&video, &lang_code, &sub_filename, true)
+    let video_id = extract_video_id(video_url).ok_or("Could not extract video ID")?;
+
+    let output = Command::new("yt-dlp")
+        .args([
+            "--write-subs",
+            "--write-auto-subs",
+            "--sub-lang",
+            &lang_code,
+            "--skip-download",
+            "--output",
+            &format!("{}.%(ext)s", video_id),
+            video_url,
+        ])
+        .output()
         .await?;
 
-    let content = tokio::fs::read_to_string(&sub_path).await?;
-    
-    // The downloader usually saves as .srt or .vtt depending on what's available
-    let ext = sub_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("Video unavailable") {
+            return Err("Video unavailable".into());
+        }
+        return Err(format!("yt-dlp failed: {}", stderr).into());
+    }
+
+    let vtt_path = PathBuf::from(format!("{}.{}.vtt", video_id, lang_code));
+    let srt_path = PathBuf::from(format!("{}.{}.srt", video_id, lang_code));
+    let langcode_vtt_path = PathBuf::from(format!("{}.vtt", video_id));
+    let langcode_srt_path = PathBuf::from(format!("{}.srt", video_id));
+
+    let actual_path = if vtt_path.exists() {
+        vtt_path
+    } else if srt_path.exists() {
+        srt_path
+    } else if langcode_vtt_path.exists() {
+        langcode_vtt_path
+    } else if langcode_srt_path.exists() {
+        langcode_srt_path
+    } else {
+        return Err(format!("No subtitles found for video {} in {}. Try a different language or check if video has captions.", video_id, lang_code).into());
+    };
+
+    let content = fs::read_to_string(&actual_path).await?;
+
+    let _ = fs::remove_file(&actual_path).await;
+
+    let ext = actual_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("srt");
     match ext {
         "vtt" => extract_text_from_vtt(&content),
-        "srt" => crate::content::extract_text_from_srt(&content),
-        _ => {
-            // If it's something else, try to parse it as SRT as a fallback
-            crate::content::extract_text_from_srt(&content)
-        }
+        _ => crate::content::extract_text_from_srt(&content),
+    }
+}
+
+fn check_yt_dlp_installed() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let result = StdCommand::new("yt-dlp").arg("--version").output();
+
+    match result {
+        Ok(output) if output.status.success() => Ok(()),
+        Ok(_) => Err("yt-dlp found but --version failed".into()),
+        Err(_) => Err(r#"yt-dlp not found. Please install it:
+  pip install yt-dlp
+  # or
+  brew install yt-dlp
+  # or
+  pipx install yt-dlp"#
+            .into()),
     }
 }
 
@@ -63,14 +97,20 @@ pub fn extract_video_id(url: &str) -> Option<String> {
     None
 }
 
-pub fn extract_text_from_vtt(vtt_content: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+pub fn extract_text_from_vtt(
+    vtt_content: &str,
+) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let mut transcript = String::new();
     let lines = vtt_content.lines();
     let mut is_content = false;
 
     for line in lines {
         let line = line.trim();
-        if line.is_empty() || line == "WEBVTT" || line.starts_with("Kind:") || line.starts_with("Language:") {
+        if line.is_empty()
+            || line == "WEBVTT"
+            || line.starts_with("Kind:")
+            || line.starts_with("Language:")
+        {
             continue;
         }
 
@@ -103,7 +143,13 @@ mod tests {
 
     #[test]
     fn test_extract_video_id() {
-        assert_eq!(extract_video_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ").unwrap(), "dQw4w9WgXcQ");
-        assert_eq!(extract_video_id("https://youtu.be/dQw4w9WgXcQ").unwrap(), "dQw4w9WgXcQ");
+        assert_eq!(
+            extract_video_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ").unwrap(),
+            "dQw4w9WgXcQ"
+        );
+        assert_eq!(
+            extract_video_id("https://youtu.be/dQw4w9WgXcQ").unwrap(),
+            "dQw4w9WgXcQ"
+        );
     }
 }

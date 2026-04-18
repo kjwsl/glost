@@ -38,6 +38,10 @@
               "rustfmt"
             ])
           ];
+          
+          buildInputs = with pkgs; [
+            yt-dlp
+          ];
         };
       }
     );
