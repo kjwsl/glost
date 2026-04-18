@@ -72,21 +72,144 @@ impl OllamaLinguist {
     pub async fn lemmatize_sentence(
         &self,
         sentence: &str,
-        lang: Language,
+        _lang: Language,
     ) -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
         let prompt = format!(
-            "Act as an expert {lang} linguist. Break down this sentence into individual words/phrases (lemmas): '{sentence}'.
+            "Extract ALL words from this sentence as a flat list: \"{}\"
 
-            Rules:
-            1. Return ONLY the base/dictionary forms
-            2. For multi-word idioms (e.g., 'by the way', 'take into account'), keep as one unit
-            3. Ignore common function words like articles and prepositions unless they change meaning
-            4. Use null for words you cannot determine
+Rules:
+- Return EVERY content word, one by one in order
+- Keep multi-word phrases together (e.g., \"by the way\" stays as 3 words)
+- Include everything, do NOT filter articles/prepositions
 
-            Respond ONLY with a JSON array of strings: [\"word1\", \"word2\", \"...\"]"
+Format: ONLY a JSON array with double quotes around each word like [\"word1\", \"word2\", \"word3\"]",
+            sentence
         );
 
-        self.execute_prompt(prompt).await
+        let request = OllamaRequest {
+            model: &self.model,
+            prompt,
+            stream: false,
+            format: "json",
+        };
+
+        let res = self
+            .client
+            .post(format!("{}/api/generate", self.base_url))
+            .json(&request)
+            .send()
+            .await?;
+
+        if !res.status().is_success() {
+            return Err(format!("Ollama API error: {}", res.status()).into());
+        }
+
+        let ollama_res: OllamaResponse = res.json().await?;
+
+        // Try to parse as JSON - handle various formats
+        let parsed: serde_json::Value =
+            serde_json::from_str(&ollama_res.response).or_else(|_| {
+                if let Some(start) = ollama_res.response.find('[') {
+                    if let Some(end) = ollama_res.response.rfind(']') {
+                        let json_part = &ollama_res.response[start..=end];
+                        serde_json::from_str(json_part)
+                    } else {
+                        Err(serde_json::Error::io(std::io::Error::new(
+                            std::io::ErrorKind::InvalidData,
+                            "no closing bracket",
+                        )))
+                    }
+                } else {
+                    Err(serde_json::Error::io(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "no array found",
+                    )))
+                }
+            })?;
+
+        // Handle the response format - could be array, object with array values, or string
+        let strings = match parsed {
+            serde_json::Value::Array(arr) => arr
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect(),
+            serde_json::Value::Object(obj) => {
+                // Check if this is a map of name->value pairs where value might be a JSON array string
+                let mut result = Vec::new();
+                for (_, v) in obj {
+                    match v {
+                        serde_json::Value::Array(arr) => {
+                            for item in arr {
+                                if let Some(s) = item.as_str() {
+                                    result.push(s.to_string());
+                                }
+                            }
+                        }
+                        serde_json::Value::String(s) => {
+                            // Try to parse as JSON array if it looks like one
+                            if s.starts_with('[') {
+                                if let Ok(parsed_inner) = serde_json::from_str::<Vec<String>>(&s) {
+                                    result.extend(parsed_inner);
+                                } else {
+                                    result.push(s.clone());
+                                }
+                            } else {
+                                result.push(s.clone());
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                result
+            }
+            serde_json::Value::String(s) => Self::extract_words_from_text(&s),
+            _ => {
+                return Err(format!("Unexpected JSON type: {:?}", parsed).into());
+            }
+        };
+
+        Ok(strings)
+    }
+
+    fn extract_words_from_text(text: &str) -> Vec<String> {
+        let mut words = Vec::new();
+
+        // Try to extract from [word] format
+        let bracket_pattern = regex::Regex::new(r"\[([^\]]+)\]").unwrap();
+        for cap in bracket_pattern.captures_iter(text) {
+            if let Some(word) = cap.get(1) {
+                let w = word.as_str().to_string();
+                if !w.chars().all(|c| c == '♪' || c == ' ') {
+                    words.push(w);
+                }
+            }
+        }
+
+        // Try to handle Python-style list like ['word1', 'word2']
+        if words.is_empty() && text.starts_with('[') {
+            let inner = text.trim_start_matches('[').trim_end_matches(']');
+            // Split by comma and extract quoted strings
+            let item_pattern = regex::Regex::new(r"'([^']*)'").unwrap();
+            for cap in item_pattern.captures_iter(inner) {
+                if let Some(word) = cap.get(1) {
+                    let w = word.as_str().trim().to_string();
+                    if !w.is_empty() {
+                        words.push(w);
+                    }
+                }
+            }
+        }
+
+        // If still no words, just split by whitespace
+        if words.is_empty() {
+            words = text
+                .split_whitespace()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty() && s.chars().any(|c| c.is_alphabetic()))
+                .collect();
+        }
+
+        words
     }
 
     pub async fn analyze_expression(

@@ -1218,6 +1218,7 @@ dependencies = [
  "indicatif",
  "pdf-extract",
  "ratatui",
+ "regex",
  "reqwest",
  "rusqlite",
  "scraper",

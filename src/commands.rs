@@ -102,21 +102,14 @@ impl GlossaryPipeline {
         &self,
         content: String,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let expression_list = get_expression_list_from_content(&content);
-
-        // 1. Initial Filtering
-        let filter_list = FilterList::load(&self.config.filter_file)?;
-        let filtered_list: Vec<(String, (usize, Option<String>))> = expression_list
-            .into_iter()
-            .filter(|(expr, _)| !filter_list.contains(expr, self.config.lang))
-            .collect();
-
-        // 2. AI Analysis
-        let analyzed_expressions: Vec<AnalyzedExpression> = if let Some(linguist) = &self.linguist {
-            self.run_ai_analysis(filtered_list, linguist).await?
+        let analyzed_expressions = if let Some(linguist) = &self.linguist {
+            self.run_ai_lemmatization(content, linguist).await?
         } else {
-            filtered_list
+            let expression_list = get_expression_list_from_content(&content);
+            let filter_list = FilterList::load(&self.config.filter_file)?;
+            expression_list
                 .into_iter()
+                .filter(|(expr, _)| !filter_list.contains(expr, self.config.lang))
                 .map(|(e, (f, c))| AnalyzedExpression {
                     original: e.clone(),
                     lemma: e,
@@ -129,11 +122,11 @@ impl GlossaryPipeline {
                 .collect()
         };
 
-        // 3. Dictionary Lookup
+        // Dictionary Lookup
         let glossary = self.fetch_definitions(analyzed_expressions).await?;
         let mut entries = get_merged_entries(&glossary);
 
-        // 4. Interactive Review
+        // Interactive Review
         if self.config.interactive {
             let (kept_entries, known_words) =
                 crate::tui::run_tui(entries.as_slice(), self.config.lang)?;
@@ -153,6 +146,7 @@ impl GlossaryPipeline {
         self.generate_outputs(entries).await
     }
 
+    #[allow(dead_code)]
     async fn run_ai_analysis(
         &self,
         expressions: Vec<(String, (usize, Option<String>))>,
@@ -232,6 +226,101 @@ impl GlossaryPipeline {
         }
         pb.finish_with_message("Analysis complete");
         Ok(results)
+    }
+
+    async fn run_ai_lemmatization(
+        &self,
+        content: String,
+        linguist: &Arc<OllamaLinguist>,
+    ) -> Result<Vec<AnalyzedExpression>, Box<dyn std::error::Error + Send + Sync>> {
+        use unicode_segmentation::UnicodeSegmentation;
+
+        let sentences: Vec<String> = content
+            .unicode_sentences()
+            .map(|s| s.trim().replace('\n', " "))
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        if sentences.is_empty() {
+            return Ok(vec![]);
+        }
+
+        println!("Lemmatizing content using AI...");
+
+        let mut all_expressions: std::collections::HashMap<String, (usize, Option<String>)> =
+            std::collections::HashMap::new();
+
+        let pb = indicatif::ProgressBar::new(sentences.len() as u64);
+        pb.set_style(
+            indicatif::ProgressStyle::default_bar()
+                .template(
+                    "{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} ({eta})",
+                )?
+                .progress_chars("#>-"),
+        );
+
+        let mut futures = FuturesUnordered::new();
+
+        for sentence in sentences {
+            let pb = pb.clone();
+            let linguist = linguist.clone();
+            let lang = self.config.lang;
+
+            futures.push(tokio::spawn(async move {
+                let lemmas = linguist.lemmatize_sentence(&sentence, lang).await;
+                pb.inc(1);
+                (sentence, lemmas)
+            }));
+        }
+
+        while let Some(result) = futures.next().await {
+            match result {
+                Ok((sentence, Ok(lemmas))) => {
+                    for lemma in lemmas {
+                        if lemma.is_empty() || lemma == "null" {
+                            continue;
+                        }
+                        let entry = all_expressions
+                            .entry(lemma.to_lowercase())
+                            .or_insert((0, None));
+                        entry.0 += 1;
+                        if entry.1.is_none() {
+                            entry.1 = Some(sentence.clone());
+                        }
+                    }
+                }
+                Ok((_, Err(e))) => {
+                    eprintln!("Lemmatization error: {:?}", e);
+                }
+                Err(e) => {
+                    eprintln!("Task error: {:?}", e);
+                }
+            }
+        }
+
+        pb.finish_with_message("Lemmatization complete");
+
+        let filter_list = FilterList::load(&self.config.filter_file)?;
+
+        let analyzed: Vec<AnalyzedExpression> = all_expressions
+            .into_iter()
+            .filter(|(expr, _)| !filter_list.contains(expr, self.config.lang))
+            .map(|(lemma, (frequency, context))| AnalyzedExpression {
+                original: lemma.clone(),
+                lemma,
+                frequency,
+                context,
+                cefr: None,
+                grammar: None,
+                meaning: None,
+            })
+            .collect();
+
+        println!(
+            "Found {} unique expressions after filtering",
+            analyzed.len()
+        );
+        Ok(analyzed)
     }
 
     async fn fetch_definitions(
