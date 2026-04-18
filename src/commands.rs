@@ -207,7 +207,15 @@ async fn process_content_to_glossary(
     } else {
         filtered_list
             .into_iter()
-            .map(|(e, (f, c))| (e, f, c, None, None, None))
+            .map(|(e, (f, c))| AnalyzedExpression {
+                original: e.clone(),
+                lemma: e,
+                frequency: f,
+                context: c,
+                cefr: None,
+                grammar: None,
+                meaning: None,
+            })
             .collect()
     };
 
@@ -234,14 +242,15 @@ async fn process_content_to_glossary(
     generate_outputs_from_entries(entries, lang, output, anki).await
 }
 
-type AnalyzedExpression = (
-    String,
-    usize,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-);
+struct AnalyzedExpression {
+    original: String,
+    lemma: String,
+    frequency: usize,
+    context: Option<String>,
+    cefr: Option<String>,
+    grammar: Option<String>,
+    meaning: Option<String>,
+}
 
 async fn run_ai_analysis(
     expressions: Vec<(String, (usize, Option<String>))>,
@@ -298,12 +307,20 @@ async fn run_ai_analysis(
             let lemma = analysis
                 .as_ref()
                 .map(|a| a.lemma.to_lowercase())
-                .unwrap_or(expression.clone());
+                .unwrap_or_else(|| expression.clone());
             let meaning = analysis.as_ref().map(|a| a.meaning.clone());
             let cefr = analysis.as_ref().and_then(|a| a.cefr.clone());
             let grammar = analysis.as_ref().and_then(|a| a.grammar.clone());
 
-            (lemma, frequency, context, cefr, grammar, meaning)
+            AnalyzedExpression {
+                original: expression.clone(),
+                lemma,
+                frequency,
+                context,
+                cefr,
+                grammar,
+                meaning,
+            }
         }));
     }
 
@@ -336,58 +353,97 @@ async fn fetch_definitions(
     let mut glossary = Glossary::new();
     let mut futures = FuturesUnordered::new();
 
-    for (expr, frequency, context, cefr, grammar, ai_meaning) in analyzed_expressions {
-        let context = context.clone();
+    for expr in analyzed_expressions {
         let pb = pb.clone();
         let cache = cache.clone();
+
         futures.push(tokio::spawn(async move {
-            // Check cache first
-            let result = if let Ok(Some(cached)) = cache.get_kaikki_entries(&expr) {
+            let result = if let Ok(Some(cached)) = cache.get_kaikki_entries(&expr.lemma) {
                 Ok(cached)
             } else {
-                let res = get_from_kaikki(&expr).await;
+                let res = get_from_kaikki(&expr.lemma).await;
                 if let Ok(ref entries) = res {
-                    let _ = cache.insert_kaikki_entries(&expr, entries);
+                    let _ = cache.insert_kaikki_entries(&expr.lemma, entries);
                 }
                 res
             };
 
             pb.inc(1);
-            (
-                expr.clone(),
-                frequency,
-                context,
-                cefr,
-                grammar,
-                ai_meaning,
-                result,
-            )
+            (expr, result)
         }));
     }
 
     while let Some(result) = futures.next().await {
         match result {
-            Ok((_expr, frequency, context, cefr, grammar, ai_meaning, Ok(entries))) => {
-                for entry in entries {
-                    if entry.lang_code.to_lowercase() == lang.to_lang_code()
-                        && let Some(mut expr_entry) = ExpressionEntry::from_kaikki_entry(
-                            entry,
-                            frequency,
-                            context.clone(),
-                            grammar.clone(),
-                            cefr.clone(),
-                        )
-                    {
-                        if let Some(meaning) = ai_meaning.clone() {
-                            expr_entry.meaning =
-                                format!("{} (AI: {})", expr_entry.meaning, meaning);
+            Ok((expr, Ok(entries))) => {
+                let target_lang = lang.to_lang_code();
+                let matching_entries: Vec<_> = entries
+                    .into_iter()
+                    .filter(|e| e.lang_code.to_lowercase() == target_lang)
+                    .collect();
+
+                if matching_entries.is_empty() && expr.original != expr.lemma {
+                    if let Ok(fallback_entries) = get_from_kaikki(&expr.original).await {
+                        for entry in fallback_entries {
+                            if entry.lang_code.to_lowercase() == target_lang {
+                                if let Some(mut expr_entry) = ExpressionEntry::from_kaikki_entry(
+                                    entry,
+                                    expr.frequency,
+                                    expr.context.clone(),
+                                    expr.grammar.clone(),
+                                    expr.cefr.clone(),
+                                ) {
+                                    if let Some(meaning) = &expr.meaning {
+                                        expr_entry.meaning =
+                                            format!("{} (AI: {})", expr_entry.meaning, meaning);
+                                    }
+                                    glossary.insert(expr_entry);
+                                }
+                            }
                         }
-                        glossary.insert(expr_entry);
+                    }
+                } else {
+                    for entry in matching_entries {
+                        if let Some(mut expr_entry) = ExpressionEntry::from_kaikki_entry(
+                            entry,
+                            expr.frequency,
+                            expr.context.clone(),
+                            expr.grammar.clone(),
+                            expr.cefr.clone(),
+                        ) {
+                            if let Some(meaning) = &expr.meaning {
+                                expr_entry.meaning =
+                                    format!("{} (AI: {})", expr_entry.meaning, meaning);
+                            }
+                            glossary.insert(expr_entry);
+                        }
                     }
                 }
             }
-            Ok((expr, _, _, _, _, _, Err(e))) => {
-                pb.suspend(|| eprintln!("Failed to get entry for \"{}\": {}", expr, e))
+            Ok((expr, Err(e))) => {
+                if expr.original != expr.lemma {
+                    if let Ok(entries) = get_from_kaikki(&expr.original).await {
+                        for entry in entries {
+                            if entry.lang_code.to_lowercase() == lang.to_lang_code() {
+                                if let Some(mut expr_entry) = ExpressionEntry::from_kaikki_entry(
+                                    entry,
+                                    expr.frequency,
+                                    expr.context.clone(),
+                                    expr.grammar.clone(),
+                                    expr.cefr.clone(),
+                                ) {
+                                    if let Some(meaning) = &expr.meaning {
+                                        expr_entry.meaning =
+                                            format!("{} (AI: {})", expr_entry.meaning, meaning);
+                                    }
+                                    glossary.insert(expr_entry);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    pb.suspend(|| eprintln!("Failed to get entry for \"{}\": {}", expr.original, e))
+                }
             }
             Err(e) => pb.suspend(|| eprintln!("Task failed: {}", e)),
         }

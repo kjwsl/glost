@@ -22,6 +22,8 @@ struct App {
     state: ListState,
     discarded: HashSet<usize>,
     known: HashSet<usize>,
+    selected: HashSet<usize>,
+    visual_mode: bool,
     lang: Language,
 }
 
@@ -36,6 +38,8 @@ impl App {
             state,
             discarded: HashSet::new(),
             known: HashSet::new(),
+            selected: HashSet::new(),
+            visual_mode: false,
             lang,
         }
     }
@@ -74,7 +78,6 @@ impl App {
                 self.discarded.remove(&i);
             } else {
                 self.discarded.insert(i);
-                self.known.remove(&i);
             }
         }
     }
@@ -85,7 +88,37 @@ impl App {
                 self.known.remove(&i);
             } else {
                 self.known.insert(i);
-                self.discarded.insert(i);
+            }
+        }
+    }
+
+    fn toggle_selection(&mut self) {
+        if let Some(i) = self.state.selected() {
+            if self.selected.contains(&i) {
+                self.selected.remove(&i);
+            } else {
+                self.selected.insert(i);
+            }
+        }
+    }
+
+    fn toggle_visual(&mut self) {
+        if let Some(i) = self.state.selected() {
+            self.visual_mode = !self.visual_mode;
+            if self.visual_mode {
+                self.selected.insert(i);
+            }
+        }
+    }
+
+    fn visual_move(&mut self) {
+        if let Some(i) = self.state.selected() {
+            if self.visual_mode {
+                if self.selected.contains(&i) {
+                    self.selected.remove(&i);
+                } else {
+                    self.selected.insert(i);
+                }
             }
         }
     }
@@ -122,8 +155,9 @@ pub fn run_tui(
     for (i, entry) in app.entries.into_iter().enumerate() {
         if app.known.contains(&i) {
             known_words.push(entry.expression.clone());
-        }
-        if !app.discarded.contains(&i) {
+        } else if app.selected.contains(&i) {
+            kept_entries.push(entry);
+        } else if !app.discarded.contains(&i) {
             kept_entries.push(entry);
         }
     }
@@ -157,8 +191,11 @@ fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut A
                         if app.known.contains(&i) {
                             style = style.fg(Color::Green);
                             prefix = " [K] ".to_string();
+                        } else if app.selected.contains(&i) {
+                            style = style.fg(Color::Yellow);
+                            prefix = " [✓] ".to_string();
                         } else if app.discarded.contains(&i) {
-                            style = style.fg(Color::Red);
+                            style = style.fg(Color::DarkGray);
                             prefix = " [X] ".to_string();
                         }
 
@@ -263,7 +300,7 @@ fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut A
 
                 // Help bar
                 let help = Paragraph::new(
-                    " [Space] Toggle Keep | [t] Mark Known | [Enter] Generate | [q] Quit ",
+                    " [Space] Select | [v] Visual | [x] Discard | [t] Known | [Enter] Generate | [q] Quit ",
                 )
                 .block(Block::default().borders(Borders::ALL));
                 f.render_widget(help, chunks[1]);
@@ -273,10 +310,18 @@ fn run_app<B: ratatui::backend::Backend>(terminal: &mut Terminal<B>, app: &mut A
         if let Event::Key(key) = event::read()? {
             match key.code {
                 KeyCode::Char('q') => return Ok(()),
-                KeyCode::Down | KeyCode::Char('j') => app.next(),
-                KeyCode::Up | KeyCode::Char('k') => app.previous(),
-                KeyCode::Char(' ') => app.toggle_discard(),
+                KeyCode::Down | KeyCode::Char('j') => {
+                    app.next();
+                    app.visual_move();
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    app.previous();
+                    app.visual_move();
+                }
+                KeyCode::Char(' ') => app.toggle_selection(),
+                KeyCode::Char('v') | KeyCode::Char('V') => app.toggle_visual(),
                 KeyCode::Char('t') => app.toggle_known(),
+                KeyCode::Char('x') => app.toggle_discard(),
                 KeyCode::Enter => return Ok(()),
                 _ => {}
             }
